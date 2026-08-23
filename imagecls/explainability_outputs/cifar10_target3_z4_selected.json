@@ -1,0 +1,81 @@
+{
+  "dataset": "cifar10",
+  "target_label": 3,
+  "target_name": "cat",
+  "checkpoint": "/data/dn/FRTP_revision1/imagecls/ckpts_ood/cifar10/ci10_simplecnnv2_relu_target3_cat_drop0.9_e50_0.6309.pth",
+  "feature": "z4",
+  "response_mode": "cam_like",
+  "shared_forward_recons_scale": false,
+  "selected_indices": [
+    825,
+    878
+  ],
+  "selected_records": [
+    {
+      "dataset": "cifar10",
+      "checkpoint": "/data/dn/FRTP_revision1/imagecls/ckpts_ood/cifar10/ci10_simplecnnv2_relu_target3_cat_drop0.9_e50_0.6309.pth",
+      "sample_idx": 825,
+      "gt": 3,
+      "gt_raw_name": "cat",
+      "gt_name": "cat",
+      "pred": 4,
+      "pred_raw_name": "deer",
+      "pred_name": "deer",
+      "feature": "z3",
+      "forward_feature": "z3",
+      "reconstructed_feature": "recons_z3",
+      "difference_definition": "recons_z3 - forward_z3",
+      "diff_mean": 0.24959298968315125,
+      "diff_abs_mean": 0.7829954028129578,
+      "diff_min": -1.6361618041992188,
+      "diff_max": 4.299166679382324,
+      "logits": [
+        -0.8270670175552368,
+        -0.514369010925293,
+        0.38489100337028503,
+        -0.5220839977264404,
+        1.64479398727417,
+        0.6150889992713928,
+        0.4471539855003357,
+        1.1216330528259277,
+        -0.006149000022560358,
+        -0.3956280052661896
+      ],
+      "response_mode": "cam_like",
+      "saved_paths": []
+    },
+    {
+      "dataset": "cifar10",
+      "checkpoint": "/data/dn/FRTP_revision1/imagecls/ckpts_ood/cifar10/ci10_simplecnnv2_relu_target3_cat_drop0.9_e50_0.6309.pth",
+      "sample_idx": 878,
+      "gt": 3,
+      "gt_raw_name": "cat",
+      "gt_name": "cat",
+      "pred": 2,
+      "pred_raw_name": "bird",
+      "pred_name": "bird",
+      "feature": "z3",
+      "forward_feature": "z3",
+      "reconstructed_feature": "recons_z3",
+      "difference_definition": "recons_z3 - forward_z3",
+      "diff_mean": 0.21474333107471466,
+      "diff_abs_mean": 0.5784186720848083,
+      "diff_min": -1.026470422744751,
+      "diff_max": 3.0735912322998047,
+      "logits": [
+        0.5743849873542786,
+        -1.9151899814605713,
+        2.365112066268921,
+        -0.691573977470398,
+        1.7824920415878296,
+        0.8519449830055237,
+        0.2692129909992218,
+        -0.6987050175666809,
+        -1.3678090572357178,
+        -1.937196969985962
+      ],
+      "response_mode": "cam_like",
+      "saved_paths": []
+    }
+  ]
+}

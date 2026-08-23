@@ -1,0 +1,92 @@
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments and local environment variables
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Jupyter transient files
+.ipynb_checkpoints/
+
+# Editors and operating-system metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# Logs and temporary run output
+*.log
+*.tmp
+*.temp
+output.png
+hardware_report_*.txt
+/imagecls/.frpt_runs/
+
+# Intermediate copies and backup files/directories
+*.bak
+*.backup
+*.orig
+*.rej
+*.save
+*.old
+*_old.*
+*-old.*
+*_copy.*
+* copy.*
+backup/
+backups/
+*_backup/
+*_backups/
+
+# Model checkpoints are distributed via an external download link
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+/imagecls/ckpts/
+
+# Large reconstruction intermediates (regenerate them with the released code)
+/imagecls/recons_data/
+/imagecls/recons_data_new/
+*.h5
+*.hdf5
+
+# Local datasets and unrelated/local working trees
+/data/
+/datasets/
+/mydata/
+/b2d_proj/
+/trash/
+/oldcode/
+
+# Local Codex/agent state
+/.codex/
+/.agents/
+
+# Local scratch notes/files that are not part of the release
+/readme.txt
+/record.md
+/test.ipynb
+
+
+imagecls/explain.ipynb
+imagecls/explainability_visualizer.py
+/imagecls/explainability_workbench.ipynb
+imagecls/FRPT_online.py
+imagecls/supplement_imagecls_architectures.txt
+imagecls/testrun.py
