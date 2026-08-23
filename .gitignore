@@ -91,8 +91,8 @@ imagecls/FRPT_online.py
 imagecls/supplement_imagecls_architectures.txt
 imagecls/testrun.py
 
-check_FFTconv.ipynb
-copy_everyci10.py
-gauss_newton_vs_euler_reverse_map.md
-reverse_conv_padding_fix.md
-test_reverse_conv.ipynb
+/check_FFTconv.ipynb
+/copy_everyci10.py
+/gauss_newton_vs_euler_reverse_map.md
+/reverse_conv_padding_fix.md
+/test_reverse_conv.ipynb
