@@ -1,0 +1,788 @@
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Tuple, Union
+
+import torch
+import torch.nn.functional as F
+from torch import Tensor, nn
+
+from navsim.agents.camera_status_vit_v5.camera_status_vit_v5_config import (
+    CameraStatusViTV5Config,
+)
+from navsim.agents.camera_status_vit_v5.explicit_vit_b16_backbone import (
+    ExplicitViTB16Backbone,
+)
+
+try:
+    from navsim.agents.reverse_activation import route_rvs_act
+    from navsim.agents.reverse_compute import (
+        _reverse_map_auto,
+        layer_norm_reverseCom,
+        linear_reverseCom,
+    )
+except ImportError:
+    from reverse_activation import route_rvs_act
+    from reverse_compute import (
+        _reverse_map_auto,
+        layer_norm_reverseCom,
+        linear_reverseCom,
+    )
+
+
+class CameraStatusViTV5TrajectoryModel(nn.Module):
+    """Memory-optimized V5 model with reconstruction adapters.
+
+    Main forward path
+    -----------------
+    stitched camera [B, 3, 256, 1024]
+      -> explicit pretrained ViT-B/16
+      -> pooled token grid configured by ``vit_token_grid_*``
+      -> final CLS [B, 768]
+      -> Linear(768, 512)
+      -> image_embedding [B, 512]
+
+    ego status [B, 8]
+      -> V1 status encoder
+      -> gamma, beta [B, 512]
+
+    fusion_z = (1 + modulation_scale * tanh(gamma)) * image_embedding + beta
+      -> V1 planning MLP
+      -> trajectory [B, num_poses, 3]
+
+    The ordinary forward pass exposes only ``trajectory`` and the six requested
+    reconstruction tensors. It does not expose Q/K/V, attention matrices,
+    generic block outputs, status_context, gamma, beta, or scale.
+
+    The ``get_recons_fea`` / ``set_recons_param`` / ``get_fea_name`` methods
+    preserve the existing post-training reconstruction interface. Additional
+    internal tensors needed to reverse the last ViT block are generated only
+    inside ``get_recons_fea`` and are never returned by the ordinary forward.
+    """
+
+    RECONS_LAYER10_KEY = "recons_vit.transformer.encoder_layers.10.output"
+    RECONS_FINAL_CLS_KEY = "recons_vit.final_cls_token"
+    RECONS_IMAGE_KEY = "recons_image_embedding"
+    RECONS_FUSION_KEY = "recons_fusion_z"
+    RECONS_PLANNING_Z1_KEY = "recons_planning_z1"
+    RECONS_PLANNING_Z2_KEY = "recons_planning_z2"
+
+    def __init__(self, config: CameraStatusViTV5Config) -> None:
+        super().__init__()
+        self._config = config
+
+        expected_recons_layer = config.vit_depth - 2
+        if config.reconstruction_vit_layer_index != expected_recons_layer:
+            raise ValueError(
+                "The current reconstruction adapter reverses the final ViT "
+                "block and therefore requires reconstruction_vit_layer_index="
+                f"{expected_recons_layer}, got "
+                f"{config.reconstruction_vit_layer_index}."
+            )
+
+        self.image_backbone = ExplicitViTB16Backbone(
+            checkpoint_path=config.image_checkpoint_path,
+            load_imagenet_checkpoint=config.load_imagenet_checkpoint,
+            image_size=(config.image_height, config.image_width),
+            patch_size=(config.vit_patch_size, config.vit_patch_size),
+            token_grid_size=(
+                config.vit_token_grid_height,
+                config.vit_token_grid_width,
+            ),
+            embed_dim=config.vit_embed_dim,
+            mlp_dim=config.vit_mlp_dim,
+            num_heads=config.vit_num_heads,
+            num_layers=config.vit_depth,
+            num_classes=1000,
+            dropout_rate=config.vit_dropout_rate,
+            attention_dropout=config.vit_attention_dropout,
+            layer_norm_eps=config.vit_layer_norm_eps,
+            freeze=config.freeze_image_encoder,
+            capture_layer_index=config.reconstruction_vit_layer_index,
+            use_gradient_checkpointing=config.use_gradient_checkpointing,
+            retain_selected_gradients=(
+                config.retain_reconstruction_feature_gradients
+            ),
+            backbone_chunk_size=config.vit_backbone_chunk_size,
+            force_bf16=config.force_backbone_bf16,
+            strict_memory_efficient_attention=(
+                config.strict_memory_efficient_attention
+            ),
+        )
+
+        # Strict V1-compatible bridge. The current optimized V5 uses only this
+        # Linear projection; no extra LayerNorm/GELU is inserted here.
+        self.image_projection = nn.Linear(
+            config.vit_embed_dim,
+            config.image_embedding_dim,
+        )
+
+        # V1 status-conditioned vector modulation branch.
+        self.status_encoder = nn.Sequential(
+            nn.Linear(config.status_input_dim, config.status_intermediate_dim),
+            nn.LayerNorm(config.status_intermediate_dim),
+            nn.GELU(),
+            nn.Linear(config.status_intermediate_dim, config.status_context_dim),
+            nn.LayerNorm(config.status_context_dim),
+            nn.GELU(),
+        )
+        self.gamma_head = nn.Linear(
+            config.status_context_dim,
+            config.image_embedding_dim,
+        )
+        self.beta_head = nn.Linear(
+            config.status_context_dim,
+            config.image_embedding_dim,
+        )
+
+        self.planning_layer1 = nn.Sequential(
+            nn.Linear(config.image_embedding_dim, config.planning_hidden_dim),
+            nn.LayerNorm(config.planning_hidden_dim),
+            nn.LeakyReLU(config.leaky_relu_slope, inplace=False),
+        )
+        self.planning_layer2 = nn.Sequential(
+            nn.Linear(config.planning_hidden_dim, config.planning_hidden_dim),
+            nn.LayerNorm(config.planning_hidden_dim),
+            nn.LeakyReLU(config.leaky_relu_slope, inplace=False),
+        )
+        self.trajectory_head = nn.Linear(
+            config.planning_hidden_dim,
+            config.trajectory_sampling.num_poses * 3,
+        )
+
+        image_mean = torch.tensor(
+            config.image_mean,
+            dtype=torch.float32,
+        ).view(1, 3, 1, 1)
+        image_std = torch.tensor(
+            config.image_std,
+            dtype=torch.float32,
+        ).view(1, 3, 1, 1)
+        self.register_buffer("image_mean", image_mean, persistent=False)
+        self.register_buffer("image_std", image_std, persistent=False)
+
+        self.recons_map: Dict[str, int] = {
+            self.RECONS_LAYER10_KEY: 1,
+            self.RECONS_FINAL_CLS_KEY: 2,
+            self.RECONS_IMAGE_KEY: 3,
+            self.RECONS_FUSION_KEY: 4,
+            self.RECONS_PLANNING_Z1_KEY: 5,
+            self.RECONS_PLANNING_Z2_KEY: 6,
+        }
+
+        self._initialize_new_parameters()
+
+    def train(self, mode: bool = True) -> "CameraStatusViTV5TrajectoryModel":
+        super().train(mode)
+        if self._config.freeze_image_encoder:
+            # Frozen pretrained backbones should not keep dropout active.
+            self.image_backbone.eval()
+        return self
+
+    def _initialize_new_parameters(self) -> None:
+        """Initialize only modules not provided by the ViT checkpoint."""
+
+        # Keep the V1 near-image-only initialization for status modulation.
+        nn.init.normal_(self.gamma_head.weight, mean=0.0, std=1.0e-3)
+        nn.init.zeros_(self.gamma_head.bias)
+        nn.init.normal_(self.beta_head.weight, mean=0.0, std=1.0e-3)
+        nn.init.zeros_(self.beta_head.bias)
+
+    def _validate_inputs(
+        self,
+        camera_feature: Tensor,
+        status_feature: Tensor,
+    ) -> None:
+        expected_camera = (
+            3,
+            self._config.image_height,
+            self._config.image_width,
+        )
+        if (
+            camera_feature.ndim != 4
+            or tuple(camera_feature.shape[1:]) != expected_camera
+        ):
+            raise ValueError(
+                "camera_feature must have shape "
+                f"[B, {expected_camera[0]}, {expected_camera[1]}, "
+                f"{expected_camera[2]}], got {tuple(camera_feature.shape)}."
+            )
+        if (
+            status_feature.ndim != 2
+            or status_feature.shape[-1] != self._config.status_input_dim
+        ):
+            raise ValueError(
+                "status_feature must have shape "
+                f"[B, {self._config.status_input_dim}], got "
+                f"{tuple(status_feature.shape)}."
+            )
+        if camera_feature.shape[0] != status_feature.shape[0]:
+            raise ValueError(
+                "camera_feature and status_feature batch sizes differ: "
+                f"{camera_feature.shape[0]} vs {status_feature.shape[0]}."
+            )
+
+    def _normalize_camera(self, camera_feature: Tensor) -> Tensor:
+        if not self._config.normalize_image:
+            return camera_feature
+        return (camera_feature - self.image_mean) / self.image_std
+
+    def _retain_grad_if_requested(self, tensor: Tensor) -> None:
+        if (
+            self._config.retain_reconstruction_feature_gradients
+            and tensor.requires_grad
+        ):
+            tensor.retain_grad()
+
+    def _encode_image(
+        self,
+        camera_feature: Tensor,
+    ) -> Tuple[Tensor, Dict[str, Tensor]]:
+        camera_feature = self._normalize_camera(camera_feature)
+
+        final_cls_token, selected_vit_features = self.image_backbone(
+            camera_feature,
+            return_reconstruction_features=(
+                self._config.return_reconstruction_features
+            ),
+        )
+
+        expected_shape = (
+            camera_feature.shape[0],
+            self._config.vit_embed_dim,
+        )
+        if tuple(final_cls_token.shape) != expected_shape:
+            raise RuntimeError(
+                "Unexpected ViT CLS feature shape: "
+                f"got {tuple(final_cls_token.shape)}, expected "
+                f"{expected_shape}."
+            )
+
+        # The ViT may return BF16 under CUDA autocast. The random projection and
+        # unchanged V1 branch are evaluated in FP32.
+        image_embedding = self.image_projection(final_cls_token.float())
+        return image_embedding, selected_vit_features
+
+    def forward(self, features: Dict[str, Tensor]) -> Dict[str, Tensor]:
+        """Predict trajectory and expose only the six requested features."""
+
+        if "camera_feature" not in features or "status_feature" not in features:
+            raise KeyError(
+                "features must contain both 'camera_feature' and "
+                "'status_feature'."
+            )
+
+        camera_feature = features["camera_feature"].to(dtype=torch.float32)
+        status_feature = features["status_feature"].to(dtype=torch.float32)
+        self._validate_inputs(camera_feature, status_feature)
+
+        image_embedding, selected_vit_features = self._encode_image(
+            camera_feature
+        )
+
+        status_context = self.status_encoder(status_feature)
+        gamma = self.gamma_head(status_context)
+        beta = self.beta_head(status_context)
+
+        scale = 1.0 + self._config.modulation_scale * torch.tanh(gamma)
+        fusion_z = scale * image_embedding + beta
+
+        planning_z1 = self.planning_layer1(fusion_z)
+        planning_z2 = self.planning_layer2(planning_z1)
+        trajectory = self.trajectory_head(planning_z2).reshape(
+            camera_feature.shape[0],
+            self._config.trajectory_sampling.num_poses,
+            3,
+        )
+
+        # predictions: Dict[str, Tensor] = {"trajectory": trajectory}
+        predictions: Dict[str, Tensor] = {
+            "trajectory": trajectory,
+
+            # =================================================
+            # FRPT forward feature interface
+            # Keep the original CameraStatus V1 names.
+            # =================================================
+            "image_embedding": image_embedding,
+            "fusion_z": fusion_z,
+            "planning_z1": planning_z1,
+            "planning_z2": planning_z2,
+        }
+
+        if self._config.return_reconstruction_features:
+            expected_vit_keys = {
+                self.RECONS_LAYER10_KEY,
+                self.RECONS_FINAL_CLS_KEY,
+            }
+            missing_vit_keys = expected_vit_keys - set(selected_vit_features)
+            if missing_vit_keys:
+                raise RuntimeError(
+                    "ViT backbone did not return the required reconstruction "
+                    f"features: {sorted(missing_vit_keys)}."
+                )
+
+            for tensor in (
+                image_embedding,
+                fusion_z,
+                planning_z1,
+                planning_z2,
+            ):
+                self._retain_grad_if_requested(tensor)
+
+            # No generic intermediate dictionary is returned. Only these six
+            # names are exposed to the HDF5/reconstruction pipeline.
+            predictions.update(
+                {
+                    self.RECONS_LAYER10_KEY: selected_vit_features[
+                        self.RECONS_LAYER10_KEY
+                    ],
+                    self.RECONS_FINAL_CLS_KEY: selected_vit_features[
+                        self.RECONS_FINAL_CLS_KEY
+                    ],
+                    self.RECONS_IMAGE_KEY: image_embedding,
+                    self.RECONS_FUSION_KEY: fusion_z,
+                    self.RECONS_PLANNING_Z1_KEY: planning_z1,
+                    self.RECONS_PLANNING_Z2_KEY: planning_z2,
+                }
+            )
+
+        return predictions
+
+    @staticmethod
+    def _reverse_linear_norm_activation(
+        front_fea: Tensor,
+        back_fea: Tensor,
+        layer: nn.Sequential,
+    ) -> Tensor:
+        if len(layer) != 3:
+            raise ValueError(
+                "Expected Sequential(Linear, LayerNorm, Activation), got "
+                f"{layer}."
+            )
+        linear, norm, activation = layer
+        if not isinstance(linear, nn.Linear) or not isinstance(norm, nn.LayerNorm):
+            raise TypeError(
+                "Reverse helper requires Linear -> LayerNorm -> Activation."
+            )
+
+        linear_z = linear(front_fea)
+        norm_z = norm(linear_z)
+        recons_norm_z = route_rvs_act(
+            activation,
+            norm_z,
+            back_fea,
+        )
+        recons_linear_z = layer_norm_reverseCom(
+            recons_norm_z,
+            norm,
+            front_fea=linear_z,
+        )
+        return linear_reverseCom(
+            front_fea,
+            recons_linear_z,
+            linear,
+        )
+
+    @staticmethod
+    def _replace_cls(tokens: Tensor, cls_token: Tensor) -> Tensor:
+        if cls_token.ndim == 2:
+            cls_token = cls_token.unsqueeze(1)
+        if cls_token.ndim != 3 or cls_token.shape[1] != 1:
+            raise ValueError(
+                "cls_token must have shape [B, D] or [B, 1, D], got "
+                f"{tuple(cls_token.shape)}."
+            )
+        if (
+            tokens.shape[0] != cls_token.shape[0]
+            or tokens.shape[2] != cls_token.shape[2]
+        ):
+            raise ValueError(
+                "tokens and cls_token batch/embed dimensions differ: "
+                f"tokens={tuple(tokens.shape)}, "
+                f"cls={tuple(cls_token.shape)}."
+            )
+
+        result = tokens.clone()
+        result[:, :1] = cls_token
+        return result
+
+    def _forward_backbone_for_recons(
+        self,
+        normalized_camera_feature: Tensor,
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Get only the internal values required by the reverse adapter.
+
+        Returns
+        -------
+        final_cls_token:
+            Final post-LayerNorm CLS feature, shape [B, 768].
+        captured_tokens:
+            Output of encoder layer ``reconstruction_vit_layer_index``;
+            with the current configuration this is layer 10 and has shape
+            [B, 257, 768].
+        last_block_tokens:
+            Output of encoder layer 11 before the final Transformer LayerNorm,
+            shape [B, 257, 768].
+
+        This path is used only by ``get_recons_fea``. It runs in evaluation mode,
+        without autograd, in FP32 and with the same internal chunk size as the
+        memory-optimized backbone. None of these auxiliary tensors is exposed by
+        the ordinary forward method.
+        """
+
+        backbone = self.image_backbone
+        capture_index = self._config.reconstruction_vit_layer_index
+        last_index = self._config.vit_depth - 1
+        if capture_index != last_index - 1:
+            raise RuntimeError(
+                "Current reverse adapter expects the captured layer to be the "
+                f"penultimate block: capture={capture_index}, last={last_index}."
+            )
+
+        final_cls_chunks: List[Tensor] = []
+        captured_chunks: List[Tensor] = []
+        last_block_chunks: List[Tensor] = []
+
+        was_training = backbone.training
+        backbone.eval()
+        try:
+            with torch.no_grad():
+                chunk_size = backbone.backbone_chunk_size
+                for start in range(
+                    0,
+                    normalized_camera_feature.shape[0],
+                    chunk_size,
+                ):
+                    end = min(
+                        start + chunk_size,
+                        normalized_camera_feature.shape[0],
+                    )
+                    images = normalized_camera_feature[start:end].float()
+
+                    embedding_map = backbone.embedding(images)
+                    if tuple(embedding_map.shape[-2:]) != backbone.token_grid_size:
+                        embedding_map = F.adaptive_avg_pool2d(
+                            embedding_map,
+                            output_size=backbone.token_grid_size,
+                        )
+
+                    patch_tokens = (
+                        embedding_map.flatten(2)
+                        .transpose(1, 2)
+                        .contiguous()
+                    )
+                    cls_token = backbone.cls_token.expand(
+                        images.shape[0],
+                        -1,
+                        -1,
+                    )
+                    tokens = torch.cat((cls_token, patch_tokens), dim=1)
+                    tokens = backbone.transformer.pos_embedding(tokens)
+
+                    captured_tokens: Optional[Tensor] = None
+                    last_block_tokens: Optional[Tensor] = None
+                    for index, block in enumerate(
+                        backbone.transformer.encoder_layers
+                    ):
+                        tokens = block(tokens)
+                        if index == capture_index:
+                            captured_tokens = tokens
+                        if index == last_index:
+                            last_block_tokens = tokens
+
+                    if captured_tokens is None or last_block_tokens is None:
+                        raise RuntimeError(
+                            "Failed to capture the required ViT block outputs."
+                        )
+
+                    final_tokens = backbone.transformer.norm(last_block_tokens)
+                    final_cls_chunks.append(final_tokens[:, 0].float())
+                    captured_chunks.append(captured_tokens.float())
+                    last_block_chunks.append(last_block_tokens.float())
+        finally:
+            if was_training:
+                backbone.train()
+            else:
+                backbone.eval()
+
+        return (
+            torch.cat(final_cls_chunks, dim=0),
+            torch.cat(captured_chunks, dim=0),
+            torch.cat(last_block_chunks, dim=0),
+        )
+
+    def _reverse_last_vit_block_cls(
+        self,
+        encoder10_tokens: Tensor,
+        target_encoder11_cls: Tensor,
+        residual_iter: int,
+    ) -> Tensor:
+        """Reverse only the CLS path of the final ViT encoder block."""
+
+        block = self.image_backbone.transformer.encoder_layers[-1]
+        was_training = block.training
+        param_requires_grad = [
+            parameter.requires_grad for parameter in block.parameters()
+        ]
+
+        # Reconstruction uses a small 257-token sequence. Allow the SDPA math
+        # fallback during this numerical inverse so FP32/Jacobian operations do
+        # not fail on environments where fused kernels reject the input.
+        old_strict_attention = block.attn.strict_memory_efficient
+
+        block.eval()
+        block.attn.strict_memory_efficient = False
+        for parameter in block.parameters():
+            parameter.requires_grad_(False)
+
+        front_tokens = encoder10_tokens.detach().float()
+        init_cls = front_tokens[:, 0].detach()
+        target_cls = target_encoder11_cls.detach().to(
+            device=init_cls.device,
+            dtype=init_cls.dtype,
+        )
+
+        def block_cls_map(cls_candidate: Tensor) -> Tensor:
+            tokens = self._replace_cls(front_tokens, cls_candidate)
+            output = block(tokens)
+            return output[:, 0]
+
+        try:
+            recons_cls, _ = _reverse_map_auto(
+                target_cls,
+                init_cls,
+                block_cls_map,
+                steps=residual_iter,
+                damping=0.8,
+                max_step_norm=10.0,
+                tol=1.0e-6,
+                method="auto",
+                jacobian_elem_limit=5.0e7,
+                return_info=True,
+            )
+        finally:
+            block.attn.strict_memory_efficient = old_strict_attention
+            for parameter, requires_grad in zip(
+                block.parameters(),
+                param_requires_grad,
+            ):
+                parameter.requires_grad_(requires_grad)
+            if was_training:
+                block.train()
+            else:
+                block.eval()
+
+        return self._replace_cls(front_tokens, recons_cls)
+
+    def _validate_recons_key(self, recons_key: Optional[str]) -> None:
+        if recons_key is not None and recons_key not in self.recons_map:
+            raise ValueError(
+                f"Unknown recons_key={recons_key!r}; available keys="
+                f"{self.get_fea_name()}."
+            )
+
+    def get_recons_fea(
+        self,
+        input_data: Dict[str, Tensor],
+        gt_data: Tensor,
+        residual_iter: int = 20,
+        recons_key: Optional[str] = None,
+    ) -> Union[Tensor, Dict[str, Tensor]]:
+        """Reconstruct one requested feature, or all six when key is ``None``."""
+
+        if isinstance(residual_iter, str):
+            residual_iter = 20
+        residual_iter = int(residual_iter)
+        if residual_iter <= 0:
+            raise ValueError(
+                f"residual_iter must be positive, got {residual_iter}."
+            )
+        self._validate_recons_key(recons_key)
+
+        if "camera_feature" not in input_data or "status_feature" not in input_data:
+            raise KeyError(
+                "input_data must contain camera_feature and status_feature."
+            )
+
+        device = next(self.parameters()).device
+        camera_feature = input_data["camera_feature"].to(
+            device=device,
+            dtype=torch.float32,
+        )
+        status_feature = input_data["status_feature"].to(
+            device=device,
+            dtype=torch.float32,
+        )
+        self._validate_inputs(camera_feature, status_feature)
+
+        if gt_data.shape[0] != camera_feature.shape[0]:
+            raise ValueError(
+                "gt_data and input batch sizes differ: "
+                f"{gt_data.shape[0]} vs {camera_feature.shape[0]}."
+            )
+
+        normalized_camera = self._normalize_camera(camera_feature)
+        (
+            vit_global_feature,
+            encoder10_tokens,
+            encoder11_tokens,
+        ) = self._forward_backbone_for_recons(normalized_camera)
+
+        # Current optimized V5 has a single Linear projection 768 -> 512.
+        image_embedding = self.image_projection(vit_global_feature)
+
+        status_context = self.status_encoder(status_feature)
+        gamma = self.gamma_head(status_context)
+        beta = self.beta_head(status_context)
+        scale = 1.0 + self._config.modulation_scale * torch.tanh(gamma)
+        fusion_z = scale * image_embedding + beta
+
+        planning_z1 = self.planning_layer1(fusion_z)
+        planning_z2 = self.planning_layer2(planning_z1)
+
+        gt_flat = gt_data.to(
+            device=device,
+            dtype=planning_z2.dtype,
+        ).reshape(gt_data.shape[0], -1)
+        if gt_flat.shape[-1] != self.trajectory_head.out_features:
+            raise ValueError(
+                "Flattened gt_data has the wrong feature dimension: "
+                f"got {gt_flat.shape[-1]}, expected "
+                f"{self.trajectory_head.out_features}."
+            )
+
+        recons_planning_z2 = linear_reverseCom(
+            planning_z2,
+            gt_flat,
+            self.trajectory_head,
+        )
+        if recons_key == self.RECONS_PLANNING_Z2_KEY:
+            return recons_planning_z2
+
+        recons_planning_z1 = self._reverse_linear_norm_activation(
+            planning_z1,
+            recons_planning_z2,
+            self.planning_layer2,
+        )
+        if recons_key == self.RECONS_PLANNING_Z1_KEY:
+            return recons_planning_z1
+
+        recons_fusion_z = self._reverse_linear_norm_activation(
+            fusion_z,
+            recons_planning_z1,
+            self.planning_layer1,
+        )
+        if recons_key == self.RECONS_FUSION_KEY:
+            return recons_fusion_z
+
+        # scale is mathematically in [1-modulation_scale, 1+modulation_scale].
+        # With the configured 0.1 it cannot approach zero, but keep a guarded
+        # denominator for configuration robustness.
+        eps = torch.finfo(scale.dtype).eps
+        safe_scale = torch.where(
+            scale.abs() < eps,
+            torch.full_like(scale, eps),
+            scale,
+        )
+        recons_image_embedding = (recons_fusion_z - beta) / safe_scale
+        if recons_key == self.RECONS_IMAGE_KEY:
+            return recons_image_embedding
+
+        recons_final_cls = linear_reverseCom(
+            vit_global_feature,
+            recons_image_embedding,
+            self.image_projection,
+        )
+        if recons_key == self.RECONS_FINAL_CLS_KEY:
+            return recons_final_cls
+
+        # Invert the final Transformer LayerNorm on the CLS position, then
+        # numerically reverse the CLS path through encoder block 11.
+        recons_encoder11_cls = layer_norm_reverseCom(
+            recons_final_cls.unsqueeze(1),
+            self.image_backbone.transformer.norm,
+            front_fea=encoder11_tokens[:, :1],
+        ).squeeze(1)
+        recons_encoder10_tokens = self._reverse_last_vit_block_cls(
+            encoder10_tokens,
+            recons_encoder11_cls,
+            residual_iter=residual_iter,
+        )
+        if recons_key == self.RECONS_LAYER10_KEY:
+            return recons_encoder10_tokens
+
+        return {
+            "gt_trajectory": gt_data,
+            self.RECONS_LAYER10_KEY: recons_encoder10_tokens,
+            self.RECONS_FINAL_CLS_KEY: recons_final_cls,
+            self.RECONS_IMAGE_KEY: recons_image_embedding,
+            self.RECONS_FUSION_KEY: recons_fusion_z,
+            self.RECONS_PLANNING_Z1_KEY: recons_planning_z1,
+            self.RECONS_PLANNING_Z2_KEY: recons_planning_z2,
+        }
+
+    def set_recons_param(self, recons_key: str) -> None:
+        """Enable exactly the parameter prefix needed for a reconstruction key."""
+
+        self._validate_recons_key(recons_key)
+        assert recons_key is not None
+
+        for parameter in self.parameters():
+            parameter.requires_grad_(False)
+
+        def _enable(module: nn.Module) -> None:
+            for parameter in module.parameters():
+                parameter.requires_grad_(True)
+
+        def _enable_vit_through(block_index: int) -> None:
+            _enable(self.image_backbone.embedding)
+            self.image_backbone.cls_token.requires_grad_(True)
+            _enable(self.image_backbone.transformer.pos_embedding)
+            for index in range(block_index + 1):
+                _enable(
+                    self.image_backbone.transformer.encoder_layers[index]
+                )
+
+        def _enable_full_vit() -> None:
+            _enable_vit_through(self._config.vit_depth - 1)
+            _enable(self.image_backbone.transformer.norm)
+
+        if recons_key == self.RECONS_LAYER10_KEY:
+            _enable_vit_through(
+                self._config.reconstruction_vit_layer_index
+            )
+            return
+
+        _enable_full_vit()
+        if recons_key == self.RECONS_FINAL_CLS_KEY:
+            return
+
+        _enable(self.image_projection)
+        if recons_key == self.RECONS_IMAGE_KEY:
+            return
+
+        for module in (
+            self.status_encoder,
+            self.gamma_head,
+            self.beta_head,
+        ):
+            _enable(module)
+        if recons_key == self.RECONS_FUSION_KEY:
+            return
+
+        _enable(self.planning_layer1)
+        if recons_key == self.RECONS_PLANNING_Z1_KEY:
+            return
+
+        _enable(self.planning_layer2)
+        if recons_key == self.RECONS_PLANNING_Z2_KEY:
+            return
+
+        raise RuntimeError(
+            "No reconstruction parameter policy was applied for "
+            f"{recons_key!r}."
+        )
+
+    def get_fea_name(self) -> List[str]:
+        """Return the six feature names in shallow-to-deep map order."""
+
+        return list(self.recons_map.keys())

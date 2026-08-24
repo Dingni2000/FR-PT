@@ -1,0 +1,77 @@
+_target_: navsim.agents.camera_status_vit_v5.camera_status_vit_v5_agent.CameraStatusViTV5TrajectoryAgent
+_convert_: 'all'
+
+config:
+  _target_: navsim.agents.camera_status_vit_v5.camera_status_vit_v5_config.CameraStatusViTV5Config
+  _convert_: 'all'
+
+  trajectory_sampling:
+    _target_: nuplan.planning.simulation.trajectory.trajectory_sampling.TrajectorySampling
+    _convert_: 'all'
+    time_horizon: 4
+    interval_length: 0.5
+
+  # Same current-frame preprocessing and cache as ResNet V1.
+  camera_history_index: 3
+  image_height: 256
+  image_width: 1024
+  side_crop_height: 28
+  side_crop_width: 416
+  front_crop_height: 28
+  feature_cache_name: camera_status_feature_v1
+  target_cache_name: camera_status_trajectory_target_v1
+
+  # Explicit ViT-B/16 loaded from the local .pth file with torch.load.
+  image_architecture: vit_b16_google_i21k_in1k_224
+  image_checkpoint_path: /data/wsc/navsim_workspace/navsim/navsim/agents/camera_status_vit_v5/imagenet21k+imagenet2012_ViT-B_16-224.pth
+  load_imagenet_checkpoint: true
+  freeze_image_encoder: false
+
+  normalize_image: true
+  image_mean: [0.5, 0.5, 0.5]
+  image_std: [0.5, 0.5, 0.5]
+
+  vit_patch_size: 16
+  vit_embed_dim: 768
+  vit_mlp_dim: 3072
+  vit_depth: 12
+  vit_num_heads: 12
+  vit_dropout_rate: 0.1
+  vit_attention_dropout: 0.0
+  vit_layer_norm_eps: 1.0e-5
+
+  # Memory-safe tokenization for external batch_size=128:
+  # raw patch grid 16x64 -> adaptive pooled token grid 8x32.
+  # Transformer sequence length: 256 + CLS = 257, not 1025.
+  vit_token_grid_height: 8
+  vit_token_grid_width: 32
+
+  # Internal ViT chunks; dataloader batch remains 128 and the loss still uses
+  # all 128 samples in one optimizer step.
+  vit_backbone_chunk_size: 16
+
+  force_backbone_bf16: true
+  strict_memory_efficient_attention: true
+  use_gradient_checkpointing: true
+
+  image_embedding_dim: 512
+  status_input_dim: 8
+  status_intermediate_dim: 64
+  status_context_dim: 128
+  modulation_scale: 0.1
+  planning_hidden_dim: 256
+  leaky_relu_slope: 0.5
+
+  backbone_lr: 1.0e-5
+  weight_decay: 1.0e-4
+
+  return_reconstruction_features: true
+  retain_reconstruction_feature_gradients: false
+  reconstruction_vit_layer_index: 10
+
+# Randomly initialized 768->512 projection, status branch, modulation heads,
+# planning MLP, and trajectory head.
+lr: 1.0e-4
+
+# Full trained NAVSIM V5 checkpoint; not the ImageNet ViT checkpoint.
+checkpoint_path: null
