@@ -28,6 +28,10 @@ Thumbs.db
 *~
 *.swp
 *.swo
+imagecls/.agents
+imagecls/.codex
+.codex
+.agents
 
 # Logs and temporary run output
 *.log
