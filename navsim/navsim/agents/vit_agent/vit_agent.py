@@ -13,15 +13,15 @@ except ImportError:  # PyTorch < 2.0 compatibility
     from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
 
 from navsim.agents.abstract_agent import AbstractAgent
-from navsim.agents.camera_status.camera_status_features import (
-    CameraStatusFeatureBuilder,
-    CameraStatusTrajectoryTargetBuilder,
+from navsim.agents.resnet_agent.resnet_features import (
+    ResNetFeatureBuilder,
+    ResNetTrajectoryTargetBuilder,
 )
-from navsim.agents.camera_status_vit_v5.camera_status_vit_v5_config import (
-    CameraStatusViTV5Config,
+from navsim.agents.vit_agent.vit_config import (
+    ViTConfig,
 )
-from navsim.agents.camera_status_vit_v5.camera_status_vit_v5_model import (
-    CameraStatusViTV5TrajectoryModel,
+from navsim.agents.vit_agent.vit_model import (
+    ViTTrajectoryModel,
 )
 from navsim.common.dataclasses import AgentInput, SensorConfig, Trajectory
 from navsim.planning.training.abstract_feature_target_builder import (
@@ -30,8 +30,8 @@ from navsim.planning.training.abstract_feature_target_builder import (
 )
 
 
-class CameraStatusViTV5TrajectoryAgent(AbstractAgent):
-    """NAVSIM V5 camera-status trajectory agent.
+class ViTTrajectoryAgent(AbstractAgent):
+    """NAVSIM ViT-B/16 trajectory agent.
 
     The model keeps the V1 status-modulation and planning path while replacing
     ResNet34 with the explicit ViT-B/16 backbone. The agent also preserves the
@@ -44,14 +44,14 @@ class CameraStatusViTV5TrajectoryAgent(AbstractAgent):
         loaded by ``ExplicitViTB16Backbone`` during model construction.
 
     ``checkpoint_path``
-        Optional complete NAVSIM V5 training checkpoint. It is loaded by
+        Optional complete NAVSIM training checkpoint. It is loaded by
         ``initialize`` after model construction and therefore overrides the
         corresponding ImageNet-initialized and randomly initialized weights.
     """
 
     def __init__(
         self,
-        config: CameraStatusViTV5Config,
+        config: ViTConfig,
         lr: float,
         checkpoint_path: Optional[str] = None,
     ) -> None:
@@ -66,7 +66,7 @@ class CameraStatusViTV5TrajectoryAgent(AbstractAgent):
         self._config = config
         self._lr = float(lr)
         self._checkpoint_path = checkpoint_path
-        self._model = CameraStatusViTV5TrajectoryModel(config)
+        self._model = ViTTrajectoryModel(config)
 
     def name(self) -> str:
         return self.__class__.__name__
@@ -192,13 +192,13 @@ class CameraStatusViTV5TrajectoryAgent(AbstractAgent):
 
         raise RuntimeError(
             "The complete NAVSIM checkpoint is incompatible with the current "
-            "CameraStatus ViT V5 architecture. This optimized version expects "
+            "ViT-B/16 architecture. This optimized version expects "
             "the configured token grid and exactly matching module shapes.\n"
             + "\n".join(diagnostics)
         )
 
     def initialize(self) -> None:
-        """Optionally restore a complete trained NAVSIM V5 checkpoint."""
+        """Optionally restore a complete trained NAVSIM checkpoint."""
 
         if self._checkpoint_path is None:
             return
@@ -206,14 +206,14 @@ class CameraStatusViTV5TrajectoryAgent(AbstractAgent):
         checkpoint_path = Path(self._checkpoint_path).expanduser().resolve()
         if not checkpoint_path.is_file():
             raise FileNotFoundError(
-                f"NAVSIM V5 checkpoint was not found: {checkpoint_path}"
+                f"NAVSIM checkpoint was not found: {checkpoint_path}"
             )
 
         checkpoint = self._safe_torch_load(checkpoint_path)
         raw_state_dict = self._unwrap_state_dict(checkpoint)
         loaded_target = self._load_complete_checkpoint(raw_state_dict)
         print(
-            "[CameraStatusViTV5TrajectoryAgent] Loaded complete NAVSIM "
+            "[ViTTrajectoryAgent] Loaded complete NAVSIM "
             f"checkpoint into {loaded_target}: {checkpoint_path}"
         )
 
@@ -236,11 +236,11 @@ class CameraStatusViTV5TrajectoryAgent(AbstractAgent):
     def get_target_builders(self) -> List[AbstractTargetBuilder]:
         """Reuse the V1 trajectory-target builder."""
 
-        return [CameraStatusTrajectoryTargetBuilder(config=self._config)]
+        return [ResNetTrajectoryTargetBuilder(config=self._config)]
 
     def get_feature_builders(self) -> List[AbstractFeatureBuilder]:
         """Reuse the V1 crop/stitch/status feature builder and cache format."""
-        return [CameraStatusFeatureBuilder(config=self._config)]
+        return [ResNetFeatureBuilder(config=self._config)]
 
     def forward(self, features: Dict[str, Tensor]) -> Dict[str, Tensor]:
         """Run the model and return trajectory plus configured reconstruction tensors."""
@@ -256,7 +256,7 @@ class CameraStatusViTV5TrajectoryAgent(AbstractAgent):
         recons_key: Optional[str] = None,
         residual_iter: int = 20,
     ):
-        """Delegate feature reconstruction to the integrated V5 model."""
+        """Delegate feature reconstruction to the integrated ViT model."""
 
         return self._model.get_recons_fea(
             input_data=input_data,

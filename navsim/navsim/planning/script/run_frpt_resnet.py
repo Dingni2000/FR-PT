@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import inspect
 import logging
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"
+
+
+def _default_exp_root() -> Path:
+    configured_root = os.environ.get("NAVSIM_EXP_ROOT")
+    if configured_root:
+        return Path(configured_root).expanduser()
+    # run_frpt_resnet.py lives in <workspace>/navsim/navsim/planning/script/.
+    return Path(__file__).resolve().parents[3].parent / "exp"
 
 
 def _frpt_cfg(cfg: DictConfig, key: str, default):
@@ -94,8 +103,22 @@ def _run_post_train_worker(worker_id, cfg_container, tasks, device_index):
         device = torch.device("cpu")
 
     checkpoint_path = cfg.agent.checkpoint_path
-    h5_path = _frpt_cfg(cfg, "h5_path", None)
-    work_dir = Path(_frpt_cfg(cfg, "work_dir", "/data/wsc/navsim_workspace/exp/frpt_camera_status"))
+    if checkpoint_path is None:
+        raise ValueError("agent.checkpoint_path is required for offline FRPT")
+    if not Path(checkpoint_path).expanduser().is_file():
+        raise FileNotFoundError(f"Offline FRPT checkpoint not found: {checkpoint_path}")
+    # Offline FRPT starts from a complete NAVSIM checkpoint.  Do not require
+    # the separate ImageNet backbone checkpoint a second time.
+    cfg.agent.config.load_imagenet_checkpoint = False
+    cfg.agent.config.image_checkpoint_path = None
+    h5_path = _frpt_cfg(cfg, "h5_path", os.environ.get("FRPT_RESNET34_H5_PATH"))
+    work_dir = Path(
+        _frpt_cfg(
+            cfg,
+            "work_dir",
+            os.environ.get("FRPT_RESNET34_WORK_DIR", _default_exp_root() / "frpt_resnet"),
+        )
+    )
     epochs = int(_frpt_cfg(cfg, "epochs", 10))
     lr = float(_frpt_cfg(cfg, "lr", cfg.agent.lr))
     alphas = list(_frpt_cfg(cfg, "alphas", [0, 0.02, 0.1]))
@@ -259,7 +282,12 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed, workers=True)
 
     checkpoint_path = cfg.agent.checkpoint_path
-    assert checkpoint_path is not None, "agent.checkpoint_path must point to the trained CameraStatus checkpoint"
+    assert checkpoint_path is not None, "agent.checkpoint_path must point to the trained ResNet checkpoint"
+    if not Path(checkpoint_path).expanduser().is_file():
+        raise FileNotFoundError(f"Offline FRPT checkpoint not found: {checkpoint_path}")
+    # The complete NAVSIM checkpoint supplies the backbone and task weights.
+    cfg.agent.config.load_imagenet_checkpoint = False
+    cfg.agent.config.image_checkpoint_path = None
 
     mode = _frpt_cfg(cfg, "mode", "cache_h5")
     if mode not in ("cache_h5", "post_train", "all"):
@@ -269,7 +297,10 @@ def main(cfg: DictConfig) -> None:
         _frpt_cfg(
             cfg,
             "h5_path",
-            "/data/wsc/navsim_workspace/exp/frpt_camera_status/camera_status_navtrain_frpt.h5",
+            os.environ.get(
+                "FRPT_RESNET34_H5_PATH",
+                str(_default_exp_root() / "frpt_resnet" / "resnet_agent_navtrain_frpt.h5"),
+            ),
         )
     )
     work_dir = Path(_frpt_cfg(cfg, "work_dir", h5_path.parent))
@@ -303,7 +334,7 @@ def main(cfg: DictConfig) -> None:
         cfg.dataloader.params.num_workers = int(cache_num_workers)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    logger.info("Building CameraStatus/ResNet agent for FRPT mode=%s on %s", mode, device)
+    logger.info("Building ResNet agent for FRPT mode=%s on %s", mode, device)
     logger.info("Checkpoint: %s", checkpoint_path)
     logger.info("H5 path: %s", h5_path)
     logger.info("FRPT work_dir: %s", work_dir)

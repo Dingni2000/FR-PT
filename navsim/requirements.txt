@@ -11,6 +11,7 @@ control==0.9.1  # Used for LQR controller synthesis
 Fiona  # Used in GpkgMapsDB.py
 geopandas>=0.12.1  # Used to read maps
 guppy3==3.1.2
+h5py  # Used by the offline FRPT reconstruction cache
 hydra-core==1.2.0  # Used for configs
 joblib
 matplotlib  # Used for rendering

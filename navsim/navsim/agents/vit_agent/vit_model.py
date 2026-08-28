@@ -6,10 +6,10 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
 
-from navsim.agents.camera_status_vit_v5.camera_status_vit_v5_config import (
-    CameraStatusViTV5Config,
+from navsim.agents.vit_agent.vit_config import (
+    ViTConfig,
 )
-from navsim.agents.camera_status_vit_v5.explicit_vit_b16_backbone import (
+from navsim.agents.vit_agent.explicit_vit_b16_backbone import (
     ExplicitViTB16Backbone,
 )
 
@@ -20,8 +20,8 @@ except ImportError:
 
 
 
-class CameraStatusViTV5TrajectoryModel(nn.Module):
-    """Memory-optimized V5 model with reconstruction adapters.
+class ViTTrajectoryModel(nn.Module):
+    """Memory-optimized ViT-B/16 model with reconstruction adapters.
 
     Main forward path
     -----------------
@@ -57,7 +57,7 @@ class CameraStatusViTV5TrajectoryModel(nn.Module):
     RECONS_PLANNING_Z1_KEY = "recons_planning_z1"
     RECONS_PLANNING_Z2_KEY = "recons_planning_z2"
 
-    def __init__(self, config: CameraStatusViTV5Config) -> None:
+    def __init__(self, config: ViTConfig) -> None:
         super().__init__()
         self._config = config
 
@@ -100,7 +100,7 @@ class CameraStatusViTV5TrajectoryModel(nn.Module):
             ),
         )
 
-        # Strict V1-compatible bridge. The current optimized V5 uses only this
+        # Strict V1-compatible bridge. The current ViT-B/16 model uses only this
         # Linear projection; no extra LayerNorm/GELU is inserted here.
         self.image_projection = nn.Linear(
             config.vit_embed_dim,
@@ -162,7 +162,7 @@ class CameraStatusViTV5TrajectoryModel(nn.Module):
 
         self._initialize_new_parameters()
 
-    def train(self, mode: bool = True) -> "CameraStatusViTV5TrajectoryModel":
+    def train(self, mode: bool = True) -> "ViTTrajectoryModel":
         super().train(mode)
         if self._config.freeze_image_encoder:
             # Frozen pretrained backbones should not keep dropout active.
@@ -291,7 +291,7 @@ class CameraStatusViTV5TrajectoryModel(nn.Module):
 
             # =================================================
             # FRPT forward feature interface
-            # Keep the original CameraStatus V1 names.
+            # Keep the original ResNet V1 names.
             # =================================================
             "image_embedding": image_embedding,
             "fusion_z": fusion_z,
@@ -618,7 +618,7 @@ class CameraStatusViTV5TrajectoryModel(nn.Module):
             encoder11_tokens,
         ) = self._forward_backbone_for_recons(normalized_camera)
 
-        # Current optimized V5 has a single Linear projection 768 -> 512.
+        # Current ViT-B/16 model has a single Linear projection 768 -> 512.
         image_embedding = self.image_projection(vit_global_feature)
 
         status_context = self.status_encoder(status_feature)

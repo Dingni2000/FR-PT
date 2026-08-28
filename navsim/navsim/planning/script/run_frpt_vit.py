@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import inspect
 import logging
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "config/training"
 CONFIG_NAME = "default_training"
+
+
+def _default_exp_root() -> Path:
+    configured_root = os.environ.get("NAVSIM_EXP_ROOT")
+    if configured_root:
+        return Path(configured_root).expanduser()
+    # run_frpt_vit.py lives in <workspace>/navsim/navsim/planning/script/.
+    return Path(__file__).resolve().parents[3].parent / "exp"
 
 
 def _frpt_cfg(cfg: DictConfig, key: str, default):
@@ -96,8 +105,22 @@ def _run_post_train_worker(worker_id, cfg_container, tasks, device_index):
         device = torch.device("cpu")
 
     checkpoint_path = cfg.agent.checkpoint_path
-    h5_path = _frpt_cfg(cfg, "h5_path", None)
-    work_dir = Path(_frpt_cfg(cfg, "work_dir", "/data/wsc/navsim_workspace/exp/frpt_vit_v5"))
+    if checkpoint_path is None:
+        raise ValueError("agent.checkpoint_path is required for offline FRPT")
+    if not Path(checkpoint_path).expanduser().is_file():
+        raise FileNotFoundError(f"Offline FRPT checkpoint not found: {checkpoint_path}")
+    # Offline FRPT starts from a complete NAVSIM checkpoint.  Do not require
+    # the separate ImageNet backbone checkpoint a second time.
+    cfg.agent.config.load_imagenet_checkpoint = False
+    cfg.agent.config.image_checkpoint_path = None
+    h5_path = _frpt_cfg(cfg, "h5_path", os.environ.get("FRPT_VIT_B16_H5_PATH"))
+    work_dir = Path(
+        _frpt_cfg(
+            cfg,
+            "work_dir",
+            os.environ.get("FRPT_VIT_B16_WORK_DIR", _default_exp_root() / "frpt_vit"),
+        )
+    )
     epochs = int(_frpt_cfg(cfg, "epochs", 10))
     lr = float(_frpt_cfg(cfg, "lr", cfg.agent.lr))
     alphas = list(_frpt_cfg(cfg, "alphas", [0, 0.02, 0.1]))
@@ -114,7 +137,7 @@ def _run_post_train_worker(worker_id, cfg_container, tasks, device_index):
     cfg.agent.config.return_reconstruction_features = True
 
     logger.info(
-        "FRPT ViT V5 offline worker %d starts %d tasks on %s: %s",
+        "FRPT ViT-B/16 offline worker %d starts %d tasks on %s: %s",
         worker_id,
         len(tasks),
         device,
@@ -159,7 +182,7 @@ def _create_or_resize_dataset(group, name, sample_tensor, total_size, compressio
     return dataset
 
 
-def save_vit_v5_recons_h5(
+def save_vit_recons_h5(
     model: AbstractAgent,
     data_loader: DataLoader,
     h5_path: Path,
@@ -178,7 +201,7 @@ def save_vit_v5_recons_h5(
 
     try:
         with h5py.File(h5_path, "w") as h5_file:
-            h5_file.attrs["format"] = "frpt_vit_v5_v1"
+            h5_file.attrs["format"] = "frpt_vit_b16_v1"
             h5_file.attrs["recons_keys"] = ",".join(recons_keys)
             feature_group = h5_file.create_group("features")
             dsets = {}
@@ -253,7 +276,7 @@ def save_vit_v5_recons_h5(
         for parameter, requires_grad in zip(model.parameters(), original_requires_grad):
             parameter.requires_grad_(requires_grad)
 
-    logger.info("Saved ViT V5 FRPT h5 to %s", h5_path)
+    logger.info("Saved ViT-B/16 FRPT h5 to %s", h5_path)
 
 
 @hydra.main(config_path=CONFIG_PATH, config_name=CONFIG_NAME, version_base=None)
@@ -261,7 +284,12 @@ def main(cfg: DictConfig) -> None:
     pl.seed_everything(cfg.seed, workers=True)
 
     checkpoint_path = cfg.agent.checkpoint_path
-    assert checkpoint_path is not None, "agent.checkpoint_path must point to the trained CameraStatus ViT V5 checkpoint"
+    assert checkpoint_path is not None, "agent.checkpoint_path must point to the trained ViT-B/16 checkpoint"
+    if not Path(checkpoint_path).expanduser().is_file():
+        raise FileNotFoundError(f"Offline FRPT checkpoint not found: {checkpoint_path}")
+    # The complete NAVSIM checkpoint supplies the backbone and task weights.
+    cfg.agent.config.load_imagenet_checkpoint = False
+    cfg.agent.config.image_checkpoint_path = None
 
     mode = _frpt_cfg(cfg, "mode", "cache_h5")
     if mode not in ("cache_h5", "post_train", "all"):
@@ -271,7 +299,10 @@ def main(cfg: DictConfig) -> None:
         _frpt_cfg(
             cfg,
             "h5_path",
-            "/data/wsc/navsim_workspace/exp/frpt_vit_v5/camera_status_vit_v5_navtrain_frpt.h5",
+            os.environ.get(
+                "FRPT_VIT_B16_H5_PATH",
+                str(_default_exp_root() / "frpt_vit" / "vit_agent_navtrain_frpt.h5"),
+            ),
         )
     )
     work_dir = Path(_frpt_cfg(cfg, "work_dir", h5_path.parent))
@@ -304,7 +335,7 @@ def main(cfg: DictConfig) -> None:
         cfg.dataloader.params.num_workers = int(cache_num_workers)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    logger.info("Building CameraStatus ViT V5 agent for FRPT mode=%s on %s", mode, device)
+    logger.info("Building ViT-B/16 agent for FRPT mode=%s on %s", mode, device)
     logger.info("Checkpoint: %s", checkpoint_path)
     logger.info("H5 path: %s", h5_path)
     logger.info("FRPT work_dir: %s", work_dir)
@@ -317,7 +348,7 @@ def main(cfg: DictConfig) -> None:
         agent.initialize()
         h5_recons_keys = [key for key in recons_keys if key != "out"]
         train_dataloader = _build_train_dataloader(cfg, agent)
-        save_vit_v5_recons_h5(
+        save_vit_recons_h5(
             model=agent,
             data_loader=train_dataloader,
             h5_path=h5_path,
@@ -330,7 +361,7 @@ def main(cfg: DictConfig) -> None:
 
     if mode in ("post_train", "all"):
         tasks = build_post_train_tasks(alphas, recons_keys, seeds)
-        logger.info("Total FRPT ViT V5 offline post-train tasks: %d", len(tasks))
+        logger.info("Total FRPT ViT-B/16 offline post-train tasks: %d", len(tasks))
         if task_workers > 1:
             task_workers = min(task_workers, len(tasks))
             if task_workers > 1:
@@ -353,7 +384,7 @@ def main(cfg: DictConfig) -> None:
                     if process.exitcode != 0:
                         failed_workers.append(process.pid)
                 if failed_workers:
-                    raise RuntimeError(f"FRPT ViT V5 offline worker failed, pids={failed_workers}")
+                    raise RuntimeError(f"FRPT ViT-B/16 offline worker failed, pids={failed_workers}")
                 return
 
         summary = model_post_train_all(
@@ -372,7 +403,7 @@ def main(cfg: DictConfig) -> None:
             h5_path=h5_path,
             tasks=tasks,
         )
-        logger.info("FRPT ViT V5 finished. Generated checkpoint groups:")
+        logger.info("FRPT ViT-B/16 finished. Generated checkpoint groups:")
         for row in summary:
             logger.info(
                 "alpha=%s recons_key=%s checkpoints=%s",

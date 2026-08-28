@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -15,21 +17,18 @@ from collections import defaultdict
 logger = logging.getLogger(__name__)
 
 
+def _default_exp_root() -> Path:
+    """Return the portable experiment root used when no path is configured."""
+    configured_root = os.environ.get("NAVSIM_EXP_ROOT")
+    if configured_root:
+        return Path(configured_root).expanduser()
+    # FRPT.py lives in <workspace>/navsim/navsim/agents/.
+    return Path(__file__).resolve().parents[2].parent / "exp"
+
+
 def _log(message):
     print(message)
     logger.info(message)
-
-
-# def get_score(model, data_loader, DEVICE):  # 分类任务测试分数
-#     model.eval()  # Set the module in evaluation mode.
-#     correct = 0.0   # 正确率
-#     with torch.no_grad():  # 不会进行计算梯度，也不会进行反向传播
-#         for data, target in data_loader:
-#             data, target = data.to(DEVICE), target.to(DEVICE)
-#             output = model(data)['out']
-#             pred = output.argmax(dim=1)
-#             correct += pred.eq(target.view_as(pred)).sum().item()
-#     return correct/len(data_loader.dataset)    
 
 
 class HDF5Dataset(Dataset):
@@ -170,11 +169,11 @@ def save_recons_fea_to_h5(
     MODELPATH,
     device,
     empty_cache_every=1,
-    output_dir="/data/wsc/navsim_workspace/exp/frpt_dn",
+    output_dir=None,
     h5_path=None,
     print_feature_stats=True,
 ):
-    output_dir = Path(output_dir)
+    output_dir = _default_exp_root() / "frpt_dn" if output_dir is None else Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     filepath = Path(h5_path) if h5_path is not None else output_dir / (Path(MODELPATH).stem + ".h5")
     filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -481,10 +480,10 @@ def _summarize_records(task_records):
 
 def model_post_train_all(model, MODELPATH, ALPHA_ls, EPOCHS, 
                          DEVICE, BATCH_SIZE, lr=3e-5, save_ckpt=True, save_res=True,
-                         work_dir="/data/wsc/navsim_workspace/exp/frpt_dn", seeds=(0, 1, 2),
+                         work_dir=None, seeds=(0, 1, 2),
                          recons_keys=None, dataloader_num_workers=4, pin_memory=True, h5_path=None,
                          tasks=None):
-    work_dir = Path(work_dir)
+    work_dir = _default_exp_root() / "frpt_dn" if work_dir is None else Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     FILEPATH = Path(h5_path) if h5_path is not None else work_dir / (Path(MODELPATH).stem + ".h5")
     SAVEPATH = work_dir / Path(MODELPATH).stem
@@ -574,54 +573,3 @@ def model_post_train_all(model, MODELPATH, ALPHA_ls, EPOCHS,
             f"{_nanmean_or_nan(ele['epoch10_loss']):>8.4f} "
         )
     return summary_res
-
-
-if __name__ == '__main__':
-    import argparse
-    import os, datetime
-    import sys
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
-    from navsim.agents.ego_status_mlp_agent import EgoStatusMLPAgent
-
-    parser = argparse.ArgumentParser(description="Feature-reverse post-training for EgoStatusMLPAgent.")
-    parser.add_argument("--modelpath", "--model-path", required=True, help="Initial NAVSIM/Lightning checkpoint path.")
-    parser.add_argument("--work-dir", default="/data/wsc/navsim_workspace/exp/frpt_dn")
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--lr", type=float, default=3e-5)
-    parser.add_argument("--alphas", default="0,0.1,0.02,0.3")
-    parser.add_argument("--seeds", default="0,1,2")
-    parser.add_argument("--hidden-layer-dim", type=int, default=512)
-    parser.add_argument("--time-horizon", type=float, default=4)
-    parser.add_argument("--interval-length", type=float, default=0.5)
-    args = parser.parse_args()
-
-    print('pid:', os.getpid())
-    print(datetime.datetime.now())
-
-    BATCH_SIZE = args.batch_size
-    EPOCHS = args.epochs
-    SEED_ls = tuple(int(seed) for seed in args.seeds.split(",") if seed)
-    ALPHA_ls = [float(alpha) for alpha in args.alphas.split(",") if alpha]
-    DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(f'BATCHSIZE={BATCH_SIZE}, SEED_ls={SEED_ls}, ALPHA_ls={ALPHA_ls}, DEVICE={DEVICE}')
-
-    MODELPATH = args.modelpath
-    h5_path = Path(args.work_dir) / (Path(MODELPATH).stem + ".h5")
-    if not h5_path.exists():
-        raise FileNotFoundError(
-            f"Missing reconstructed feature cache: {h5_path}. "
-            "Build it first with save_recons_fea_to_h5(model, navsim_train_loader, MODELPATH, DEVICE)."
-        )
-
-    trajectory_sampling = TrajectorySampling(time_horizon=args.time_horizon, interval_length=args.interval_length)
-    model = EgoStatusMLPAgent(trajectory_sampling, args.hidden_layer_dim, args.lr).to(DEVICE)
-
-    print('model path', MODELPATH, '\n')
-    model_post_train_all(
-        model, MODELPATH, ALPHA_ls, EPOCHS, DEVICE, BATCH_SIZE,
-        lr=args.lr, work_dir=args.work_dir, seeds=SEED_ls,
-    )
-
-    print(datetime.datetime.now())

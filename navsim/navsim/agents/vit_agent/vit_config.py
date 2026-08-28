@@ -9,7 +9,7 @@ from nuplan.planning.simulation.trajectory.trajectory_sampling import (
 
 
 @dataclass
-class CameraStatusViTV5Config:
+class ViTConfig:
     """Configuration for V1 with only the image backbone replaced by ViT-B/16.
 
     The external dataloader batch size is not changed. Memory is controlled by:
@@ -35,13 +35,10 @@ class CameraStatusViTV5Config:
     side_crop_width: int = 416
     front_crop_height: int = 28
     feature_cache_name: str = "camera_status_feature_v1"
-    target_cache_name: str = "camera_status_trajectory_target_v1"
 
     # Local ViT ImageNet pretraining checkpoint loaded by torch.load.
     image_architecture: str = "vit_b16_google_i21k_in1k_224"
-    image_checkpoint_path: Optional[str] = (
-        "/imagenet21k+imagenet2012_ViT-B_16-224.pth"
-    )
+    image_checkpoint_path: Optional[str] = None
     load_imagenet_checkpoint: bool = True
     freeze_image_encoder: bool = False
 
@@ -95,7 +92,7 @@ class CameraStatusViTV5Config:
     def __post_init__(self) -> None:
         if self.image_architecture != "vit_b16_google_i21k_in1k_224":
             raise ValueError(
-                "V5 is fixed to explicit ViT-B/16, got "
+                "ViT agent is fixed to explicit ViT-B/16, got "
                 f"{self.image_architecture!r}."
             )
         if self.camera_history_index < 0:

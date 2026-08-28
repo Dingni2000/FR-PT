@@ -5,8 +5,8 @@ from nuplan.planning.simulation.trajectory.trajectory_sampling import Trajectory
 
 
 @dataclass
-class CameraStatusConfig:
-    """Configuration for the lightweight Camera-Status trajectory agent."""
+class ResNetConfig:
+    """Configuration for the lightweight ResNet trajectory agent."""
 
     trajectory_sampling: TrajectorySampling = field(
         default_factory=lambda: TrajectorySampling(
@@ -26,7 +26,9 @@ class CameraStatusConfig:
 
     # Image encoder.
     image_architecture: str = "resnet34"
-    # None uses camera_status/resnet34-b627a593.pth when load_imagenet_checkpoint=True.
+    # The ImageNet weights are intentionally kept outside the repository.
+    # Set FRPT_RESNET34_IMAGENET_CKPT (or pass this field explicitly) when
+    # load_imagenet_checkpoint=True.
     image_checkpoint_path: Optional[str] = None
     load_imagenet_checkpoint: bool = True
     freeze_image_encoder: bool = False
@@ -69,6 +71,12 @@ class CameraStatusConfig:
             raise ValueError("Spatial pooling dimensions must be positive.")
         if self.image_architecture != "resnet34":
             raise ValueError("This implementation currently supports only resnet34.")
+        if self.load_imagenet_checkpoint and not self.image_checkpoint_path:
+            raise ValueError(
+                "image_checkpoint_path is required when "
+                "load_imagenet_checkpoint=True. Set "
+                "FRPT_RESNET34_IMAGENET_CKPT to the local ImageNet checkpoint."
+            )
         if not 0.0 < self.backbone_lr_scale <= 1.0:
             raise ValueError(
                 "backbone_lr_scale must be in the interval (0, 1]."

@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import torch
 
-from navsim.agents.camera_status.camera_status_config import CameraStatusConfig
+from navsim.agents.resnet_agent.resnet_config import ResNetConfig
 from navsim.common.dataclasses import AgentInput, Scene
 from navsim.planning.training.abstract_feature_target_builder import (
     AbstractFeatureBuilder,
@@ -12,10 +12,10 @@ from navsim.planning.training.abstract_feature_target_builder import (
 )
 
 
-class CameraStatusFeatureBuilder(AbstractFeatureBuilder):
+class ResNetFeatureBuilder(AbstractFeatureBuilder):
     """Builds the stitched current-frame camera image and 8-D ego status."""
 
-    def __init__(self, config: CameraStatusConfig):
+    def __init__(self, config: ResNetConfig):
         self._config = config
 
     def get_unique_name(self) -> str:
@@ -143,10 +143,10 @@ class CameraStatusFeatureBuilder(AbstractFeatureBuilder):
         return status_feature
 
 
-class CameraStatusTrajectoryTargetBuilder(AbstractTargetBuilder):#构建标签信息
+class ResNetTrajectoryTargetBuilder(AbstractTargetBuilder):#构建标签信息
     """Builds the future ego trajectory target."""
 
-    def __init__(self, config: CameraStatusConfig):
+    def __init__(self, config: ResNetConfig):
         self._config = config
 
     def get_unique_name(self) -> str:

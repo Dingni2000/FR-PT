@@ -1,22 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Batch-evaluate FRPT EgoStatusMLP checkpoints on NAVSIM navtest.
+# Batch-evaluate FRPT ViT-B/16 (vit_agent) checkpoints on NAVSIM navtest.
 # The metric cache is independent of model weights, so generate it once and
 # reuse it across all checkpoints.
 
-export NAVSIM_DEVKIT_ROOT="${NAVSIM_DEVKIT_ROOT:-/data/wsc/navsim_workspace/navsim}"
-export OPENSCENE_DATA_ROOT="${OPENSCENE_DATA_ROOT:-/data/wsc/navsim_workspace/dataset}"
-export NAVSIM_EXP_ROOT="${NAVSIM_EXP_ROOT:-/data/wsc/navsim_workspace/exp}"
-export NUPLAN_MAPS_ROOT="${NUPLAN_MAPS_ROOT:-$OPENSCENE_DATA_ROOT/maps}"
-export NUPLAN_MAP_VERSION="${NUPLAN_MAP_VERSION:-nuplan-maps-v1.0}"
-export PYTHONPATH="$NAVSIM_DEVKIT_ROOT:${PYTHONPATH:-}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/env.sh
+source "$SCRIPT_DIR/scripts/env.sh"
 
 TRAIN_TEST_SPLIT="${TRAIN_TEST_SPLIT:-navtest}"
-CKPT_DIR="${CKPT_DIR:-$NAVSIM_EXP_ROOT/frpt_vit_v5_post_train/ckpts}"
+CKPT_DIR="${CKPT_DIR:-$FRPT_VIT_B16_CKPT_DIR}"
 CKPT_GLOB="${CKPT_GLOB:-*.ckpt}"
-METRIC_CACHE_PATH="${METRIC_CACHE_PATH:-$NAVSIM_EXP_ROOT/transfuser_navtest_metric_cache}"
-EXP_PREFIX="${EXP_PREFIX:-eval_frpt_camera_status}"
+METRIC_CACHE_PATH="${METRIC_CACHE_PATH:-$NAVSIM_NAVTEST_METRIC_CACHE}"
+EXP_PREFIX="${EXP_PREFIX:-eval_frpt_vit}"
 GPU_IDS="${GPU_IDS:-2}"
 LIMIT="${LIMIT:-0}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -129,7 +126,9 @@ for ckpt in "${CKPTS[@]}"; do
   cmd=(
     python "$NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py"
     train_test_split="$TRAIN_TEST_SPLIT"
-    agent=camera_status_vit_v5
+    agent=vit_agent
+    agent.config.load_imagenet_checkpoint=false
+    agent.config.image_checkpoint_path=null
     agent.checkpoint_path="$ckpt"
     experiment_name="$exp_name"
     metric_cache_path="$METRIC_CACHE_PATH"

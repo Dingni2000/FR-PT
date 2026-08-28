@@ -1,8 +1,8 @@
-_target_: navsim.agents.camera_status.camera_status_agent.CameraStatusTrajectoryAgent
+_target_: navsim.agents.resnet_agent.resnet_agent.ResNetTrajectoryAgent
 _convert_: 'all'
 
 config:
-  _target_: navsim.agents.camera_status.camera_status_config.CameraStatusConfig
+  _target_: navsim.agents.resnet_agent.resnet_config.ResNetConfig
   _convert_: 'all'
 
   trajectory_sampling:
@@ -21,21 +21,19 @@ config:
 
   image_architecture: resnet34
 
-  # Local official-compatible ImageNet ResNet34 state dict; no timm/torchvision loading.
-  # Training: set this to the absolute path of resnet34-b627a593.pth.
-  image_checkpoint_path: /data/wsc/navsim_workspace/navsim/navsim/agents/camera_status/resnet34-b627a593.pth
+  # Set FRPT_RESNET34_IMAGENET_CKPT to a local official-compatible ResNet34 state dict.
+  image_checkpoint_path: ${oc.env:FRPT_RESNET34_IMAGENET_CKPT,null}
   load_imagenet_checkpoint: true
 
   freeze_image_encoder: false
   normalize_image: true
-  image_mean: [0.485, 0.456, 0.406] ##预训练图像的处理
+  image_mean: [0.485, 0.456, 0.406]
   image_std: [0.229, 0.224, 0.225]
   spatial_pool_height: 1
   spatial_pool_width: 4
   image_embedding_dim: 512
 
-  # Normal training must use "none" to avoid returning large feature maps.
-  # Feature analysis options: stages / blocks / full.
+  # Use stages for reconstruction features; set to none for normal inference.
   backbone_feature_capture: stages
   retain_backbone_feature_gradients: false
 
@@ -45,7 +43,7 @@ config:
   modulation_scale: 0.1
 
   planning_hidden_dim: 256
-  leaky_relu_slope: 0.5 ##修改成0.5
+  leaky_relu_slope: 0.5
   weight_decay: 1.0e-4
   backbone_lr_scale: 0.1
   return_intermediate_features: true

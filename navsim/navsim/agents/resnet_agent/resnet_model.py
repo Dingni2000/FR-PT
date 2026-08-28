@@ -4,8 +4,8 @@ from typing import Dict, Tuple
 import torch
 from torch import nn
 
-from navsim.agents.camera_status.camera_status_config import CameraStatusConfig
-from navsim.agents.camera_status.resnet34_feature_backbone import ResNet34FeatureBackbone
+from navsim.agents.resnet_agent.resnet_config import ResNetConfig
+from navsim.agents.resnet_agent.resnet34_feature_backbone import ResNet34FeatureBackbone
 
 try:
     from ..rvs_cpt import composite_reverseCom, linear_reverseCom, route_rvs_act, layer_norm_reverseCom
@@ -16,9 +16,9 @@ except ImportError:
     from rvs_cpt import composite_reverseCom, linear_reverseCom, route_rvs_act, layer_norm_reverseCom
 
 
-class CameraStatusTrajectoryModel(nn.Module):
+class ResNetTrajectoryModel(nn.Module):
     """ResNet34 image encoder with ego-status-conditioned vector modulation."""
-    def __init__(self, config: CameraStatusConfig):
+    def __init__(self, config: ResNetConfig):
         super().__init__()
         self._config = config
 

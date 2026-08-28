@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Evaluate CameraStatusAgent on NAVSIM navtest.
+# Evaluate the ResNet-34 resnet_agent on NAVSIM navtest.
 # Re-running this script resumes metric caching by default: existing
 # metric_cache.pkl files are skipped.
 
-export NAVSIM_DEVKIT_ROOT="${NAVSIM_DEVKIT_ROOT:-/data/wsc/navsim_workspace/navsim}"
-export OPENSCENE_DATA_ROOT="${OPENSCENE_DATA_ROOT:-/data/wsc/navsim_workspace/dataset}"
-export NAVSIM_EXP_ROOT="${NAVSIM_EXP_ROOT:-/data/wsc/navsim_workspace/exp}"
-export NUPLAN_MAPS_ROOT="${NUPLAN_MAPS_ROOT:-$OPENSCENE_DATA_ROOT/maps}"
-export NUPLAN_MAP_VERSION="${NUPLAN_MAP_VERSION:-nuplan-maps-v1.0}"
-export PYTHONPATH="$NAVSIM_DEVKIT_ROOT:${PYTHONPATH:-}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/env.sh
+source "$SCRIPT_DIR/scripts/env.sh"
 
 TRAIN_TEST_SPLIT="${TRAIN_TEST_SPLIT:-navtest}"
-CHECKPOINT="${CHECKPOINT:-$NAVSIM_EXP_ROOT/frpt_resnet_post_train/ckpts}"
-METRIC_CACHE_PATH="${METRIC_CACHE_PATH:-$NAVSIM_EXP_ROOT/transfuser_navtest_metric_cache}"
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-eval_camera_status_agent_relu0.5_lr}"
+CHECKPOINT="${CHECKPOINT:-$FRPT_RESNET34_CHECKPOINT}"
+METRIC_CACHE_PATH="${METRIC_CACHE_PATH:-$NAVSIM_NAVTEST_METRIC_CACHE}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-eval_resnet_agent}"
 GPU_IDS="${GPU_IDS:-3,5}"
 WORKER="${WORKER:-sequential}"
 MAX_WORKERS="${MAX_WORKERS:-}"
@@ -80,11 +77,13 @@ else
   echo "[$(date '+%F %T')] Skipping metric caching"
 fi
 
-echo "[$(date '+%F %T')] Running CameraStatusAgent evaluation"
+echo "[$(date '+%F %T')] Running ResNet agent evaluation"
 CUDA_VISIBLE_DEVICES="$GPU_IDS" python "$NAVSIM_DEVKIT_ROOT/navsim/planning/script/run_pdm_score.py" \
   train_test_split="$TRAIN_TEST_SPLIT" \
-  agent=camera_status_agent \
-  agent.checkpoint_path="'$CHECKPOINT'" \
+  agent=resnet_agent \
+  agent.config.load_imagenet_checkpoint=false \
+  agent.config.image_checkpoint_path=null \
+  agent.checkpoint_path="$CHECKPOINT" \
   experiment_name="$EXPERIMENT_NAME" \
   metric_cache_path="$METRIC_CACHE_PATH" \
   "${SCORE_WORKER_ARGS[@]}"
