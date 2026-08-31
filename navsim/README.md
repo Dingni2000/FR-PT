@@ -350,7 +350,7 @@ python navsim/planning/script/run_training.py \
   force_cache_computation=false \
   experiment_name=frpt_resnet_base \
   trainer.params.accelerator=gpu \
-  trainer.params.devices=1 \
+  +trainer.params.devices=1 \
   trainer.params.strategy=auto \
   trainer.params.max_epochs=100 \
   dataloader.params.batch_size=128 \
@@ -368,7 +368,7 @@ python navsim/planning/script/run_training.py \
   force_cache_computation=false \
   experiment_name=frpt_vit_base \
   trainer.params.accelerator=gpu \
-  trainer.params.devices=1 \
+  +trainer.params.devices=1 \
   trainer.params.strategy=auto \
   trainer.params.precision=bf16-mixed \
   trainer.params.max_epochs=100 \
