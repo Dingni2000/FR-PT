@@ -1,17 +1,85 @@
-# python
-*.pyc
+# Python bytecode and caches
+__pycache__/
 **/__pycache__/
-.pytest_cache/*
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# Local package/build metadata
+*.egg-info/
 .pydevproject
+build/
+dist/
+pip-wheel-metadata/
 
-# IDE
-.vscode/*
+# Environments and local configuration
+.env
+.env.*
+.venv/
+venv/
+env/
+conda-meta/
 
-# Pip
-*.egg-info
+# Editors and OS files
+.vscode/
+.idea/
+.devcontainer/local/
+.DS_Store
+Thumbs.db
+.python-version
 
-# files
+# Logs and temporary files
 *.log
+*.out
+*.err
+*.tmp
+*.swp
+*.swo
+
+# NAVSIM/OpenScene data and generated experiment roots
+/dataset/
+/data/
+/exp/
+/output/
+/outputs/
+/runs/
+/results/
+/logs/
+**/training_cache/
+**/training_cache_*/
+**/metric_cache/
+**/metric_cache_*/
+**/lightning_logs/
+**/.hydra/
+**/hydra/
+**/eval_*/
+
+# Model checkpoints and FR-PT artifacts
+*.ckpt
+*.pth
+*.pt
+*.pth.tar
+*.h5
+*.hdf5
+*.npy
+*.npz
 *.pkl
-*.jpg
+*.pickle
+post_train_metrics.csv
+
+# Large sensor and visualization artifacts
+*.tgz
+*.zip
 *.pcd
+*.bag
+*.db3
+*.sqlite
+*.sqlite3
+*.mp4
+*.avi
+*.jpg
+*.jpeg

@@ -480,7 +480,6 @@ class PDMScorer:
                     centroid = self._observation[current_time_idx][token].centroid
                     track_heading = self._observation.unique_objects[token].box.center.heading
                     track_state = StateSE2(centroid.x, centroid.y, track_heading)
-                    # TODO: fix ego_area for intersection
                     if is_agent_ahead(ego_rear_axle, track_state) or (
                         (
                             ego_in_multiple_lanes_or_nondrivable_area

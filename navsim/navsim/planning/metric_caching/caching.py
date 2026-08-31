@@ -121,7 +121,6 @@ def cache_data(cfg: DictConfig, worker: WorkerPool) -> None:
     assert cfg.cache.cache_path is not None, f"Cache path cannot be None when caching, got {cfg.cache.cache_path}"
 
     # Extract scenes based on scene-loader to know which tokens to distribute across workers
-    # TODO: infer the tokens per log from metadata, to not have to load metric cache and scenes here
     scene_loader = SceneLoader(
         sensor_blobs_path=None,
         data_path=Path(cfg.navsim_log_path),

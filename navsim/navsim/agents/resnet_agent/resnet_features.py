@@ -24,7 +24,7 @@ class ResNetFeatureBuilder(AbstractFeatureBuilder):
 
     def compute_features(self, agent_input: AgentInput) -> Dict[str, torch.Tensor]:
         """Build camera and ego-status tensors from NAVSIM AgentInput."""
-        frame_index = self._config.camera_history_index ##获取当前帧的图片
+        frame_index = self._config.camera_history_index
 
         if frame_index >= len(agent_input.cameras):
             raise IndexError(
@@ -66,7 +66,7 @@ class ResNetFeatureBuilder(AbstractFeatureBuilder):
                 )
 
         # Keep RGB only in case an input unexpectedly contains an alpha channel.
-        l0_image = camera_images["cam_l0"][..., :3] ##有些图片可能有4个通道，取前三个通道,比如RGBA,a表示透明度
+        l0_image = camera_images["cam_l0"][..., :3]
         f0_image = camera_images["cam_f0"][..., :3]
         r0_image = camera_images["cam_r0"][..., :3]
 
@@ -89,7 +89,7 @@ class ResNetFeatureBuilder(AbstractFeatureBuilder):
                 f"l0={l0_crop.shape}, f0={f0_crop.shape}, r0={r0_crop.shape}."
             )
 
-        stitched_image = np.concatenate([l0_crop, f0_crop, r0_crop], axis=1)#宽度进行concat
+        stitched_image = np.concatenate([l0_crop, f0_crop, r0_crop], axis=1)
         resized_image = cv2.resize(
             stitched_image,
             (self._config.image_width, self._config.image_height),
@@ -131,7 +131,7 @@ class ResNetFeatureBuilder(AbstractFeatureBuilder):
         acceleration = torch.as_tensor(ego_status.ego_acceleration, dtype=torch.float32).flatten()
         driving_command = torch.as_tensor(ego_status.driving_command, dtype=torch.float32).flatten()
 
-        status_feature = torch.cat([velocity, acceleration, driving_command], dim=0)#提取status信息
+        status_feature = torch.cat([velocity, acceleration, driving_command], dim=0)
         if status_feature.numel() != 8:
             raise ValueError(
                 "Expected 8 ego-status values from velocity + acceleration + driving_command, "
@@ -143,7 +143,7 @@ class ResNetFeatureBuilder(AbstractFeatureBuilder):
         return status_feature
 
 
-class ResNetTrajectoryTargetBuilder(AbstractTargetBuilder):#构建标签信息
+class ResNetTrajectoryTargetBuilder(AbstractTargetBuilder):
     """Builds the future ego trajectory target."""
 
     def __init__(self, config: ResNetConfig):

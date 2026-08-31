@@ -17,7 +17,6 @@ from nuplan.planning.simulation.trajectory.trajectory_sampling import Trajectory
 from navsim.common.dataclasses import Annotations
 from navsim.common.enums import BoundingBoxIndex
 
-# TODO: Refactor this file
 tracked_object_types: Dict[str, TrackedObjectType] = {
     "vehicle": TrackedObjectType.VEHICLE,
     "pedestrian": TrackedObjectType.PEDESTRIAN,

@@ -181,10 +181,3 @@ class EgoStatusMLPAgent(AbstractAgent):
     
     def get_fea_name(self):
         return list(self.recons_map.keys())
-    
-if __name__ == '__main__':
-    ts = TrajectorySampling(time_horizon=4, interval_length=0.5)
-    model = EgoStatusMLPAgent(ts, 16, 0.001)
-    named_children = list(model._mlp.named_children())
-    for idx, (n, layer) in enumerate(named_children):
-        print(idx, n, layer)

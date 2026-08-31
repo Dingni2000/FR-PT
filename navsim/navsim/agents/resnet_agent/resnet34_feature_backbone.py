@@ -367,7 +367,7 @@ class ResNet34FeatureBackbone(nn.Module):
         freeze: bool = False,
     ) -> None:
         super().__init__()
-        self.resnet = resnet34(num_classes=1000)#预训练适用于resnet任务
+        self.resnet = resnet34(num_classes=1000)
 
         if load_imagenet_checkpoint:
             if not checkpoint_path:

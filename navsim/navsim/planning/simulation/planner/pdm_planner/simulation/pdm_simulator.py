@@ -39,7 +39,6 @@ class PDMSimulator:
         :return: simulated proposal states as array
         """
 
-        # TODO: find cleaner way to load parameters
         # set parameters of motion model and tracker
         self._motion_model._vehicle = initial_ego_state.car_footprint.vehicle_parameters
         self._tracker._discretization_time = self.proposal_sampling.interval_length

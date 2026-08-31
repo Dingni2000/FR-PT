@@ -72,7 +72,6 @@ class AbstractPDMClosedPlanner(AbstractPDMPlanner):
 
         current_lane = self._get_starting_lane(ego_state)
 
-        # TODO: Find additional conditions to trigger re-planning
         create_new_proposals = self._iteration == 0
 
         if create_new_proposals:

@@ -77,7 +77,6 @@ def add_annotations_to_bev_ax(ax: plt.Axes, annotations: Annotations, add_ego: b
 def add_map_to_bev_ax(ax: plt.Axes, map_api: AbstractMap, origin: StateSE2) -> plt.Axes:
     """
     Adds birds-eye-view visualization of map (ie. polygons / lines)
-    TODO: add more layers for visualizations (or flags in config)
     :param ax: matplotlib ax object
     :param map_api: nuPlans map interface
     :param origin: (x,y,θ) dataclass of global ego frame

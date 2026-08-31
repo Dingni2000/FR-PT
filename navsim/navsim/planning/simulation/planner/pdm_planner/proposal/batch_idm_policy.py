@@ -140,7 +140,6 @@ class BatchIDMPolicy:
             self._decel_max[longitudinal_idcs],
         )
 
-        # TODO: add as parameter
         acceleration_exponent = 10
 
         # convenience definitions

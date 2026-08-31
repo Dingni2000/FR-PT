@@ -107,7 +107,7 @@ class NavSimScenario(AbstractScenario):
     @property
     def scenario_type(self) -> str:
         """Inherited, see superclass."""
-        return DUMMY_SCENARIO_TYPE  # TODO: avoid dummy
+        return DUMMY_SCENARIO_TYPE
 
     @property
     def map_api(self) -> AbstractMap:
@@ -222,14 +222,12 @@ class NavSimScenario(AbstractScenario):
         self, iteration: int, time_horizon: float, num_samples: Optional[int] = None
     ) -> Generator[TimePoint, None, None]:
         """Inherited, see superclass."""
-        # FIXME:
         yield self.get_time_point(0)
 
     def get_ego_past_trajectory(
         self, iteration: int, time_horizon: float, num_samples: Optional[int] = None
     ) -> Generator[EgoState, None, None]:
         """Inherited, see superclass."""
-        # FIXME:
         yield self.get_ego_state_at_iteration(0)
 
     def get_ego_future_trajectory(
@@ -248,7 +246,6 @@ class NavSimScenario(AbstractScenario):
         future_trajectory_sampling: Optional[TrajectorySampling] = None,
     ) -> Generator[DetectionsTracks, None, None]:
         """Inherited, see superclass."""
-        # FIXME: add history stats
         yield self.get_tracked_objects_at_iteration(0)
 
     def get_future_tracked_objects(
@@ -294,7 +291,6 @@ class NavSimScenario(AbstractScenario):
         :param num_samples: number of entries in the future, if None it will be deduced from the DB.
         :return: Generator object for traffic light history to the past.
         """
-        # FIXME: add traffic light stats
         yield from []  # placeholder
 
     def get_future_traffic_light_status_history(
@@ -308,7 +304,6 @@ class NavSimScenario(AbstractScenario):
         :param num_samples: number of entries in the future, if None it will be deduced from the DB.
         :return: Generator object for traffic light history to the future.
         """
-        # FIXME: add traffic light stats
         yield from []  # placeholder
 
     def get_scenario_tokens(self) -> List[str]:

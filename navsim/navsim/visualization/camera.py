@@ -103,7 +103,6 @@ def _transform_annotations_to_camera(
 ) -> npt.NDArray[np.float32]:
     """
     Helper function to transform bounding boxes into camera frame
-    TODO: Refactor
     :param boxes: array representation of bounding boxes
     :param sensor2lidar_rotation: camera rotation
     :param sensor2lidar_translation: camera translation
@@ -140,7 +139,6 @@ def _transform_annotations_to_camera(
 def _rotation_3d_in_axis(points: npt.NDArray[np.float32], angles: npt.NDArray[np.float32], axis: int = 0):
     """
     Rotate 3D points by angles according to axis.
-    TODO: Refactor
     :param points: array of points
     :param angles: array of angles
     :param axis: axis to perform rotation, defaults to 0
@@ -189,7 +187,6 @@ def _plot_rect_3d_on_img(
 ) -> npt.NDArray[np.uint8]:
     """
     Plot the boundary lines of 3D rectangular on 2D images.
-    TODO: refactor
     :param image:  The numpy array of image.
     :param box_corners: Coordinates of the corners of 3D, shape of [N, 8, 2].
     :param box_labels: labels of boxes for coloring
@@ -234,7 +231,6 @@ def _transform_points_to_image(
 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.bool_]]:
     """
     Transforms points in camera frame to image pixel coordinates
-    TODO: refactor
     :param points: points in camera frame
     :param intrinsic: camera intrinsics
     :param image_shape: shape of image in pixel
@@ -274,7 +270,6 @@ def _transform_pcs_to_images(
 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.bool_]]:
     """
     Transforms points in camera frame to image pixel coordinates
-    TODO: refactor
     :param lidar_pc: lidar point cloud
     :param sensor2lidar_rotation: camera rotation
     :param sensor2lidar_translation: camera translation

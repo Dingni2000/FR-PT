@@ -40,7 +40,6 @@ class MetricCacheProcessor:
         self._cache_path = pathlib.Path(cache_path) if cache_path else None
         self._force_feature_computation = force_feature_computation
 
-        # TODO: Add to some config
         self._future_sampling = TrajectorySampling(num_poses=50, interval_length=0.1)
         self._proposal_sampling = TrajectorySampling(num_poses=40, interval_length=0.1)
         self._map_radius = 100
@@ -95,7 +94,6 @@ class MetricCacheProcessor:
         :return: observation object of PDM-Closed
         """
 
-        # TODO: add to config
         state_size = 6  # (time, x, y, heading, velo_x, velo_y)
 
         time_horizon = 5.0  # [s]

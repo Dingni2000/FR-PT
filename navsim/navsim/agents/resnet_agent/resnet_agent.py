@@ -94,7 +94,7 @@ class ResNetTrajectoryAgent(AbstractAgent):
         self.eval()
         device = next(self.parameters()).device
 
-        features: Dict[str, torch.Tensor] = {}#获取输入特征
+        features: Dict[str, torch.Tensor] = {}
         for builder in self.get_feature_builders():
             features.update(builder.compute_features(agent_input))
 

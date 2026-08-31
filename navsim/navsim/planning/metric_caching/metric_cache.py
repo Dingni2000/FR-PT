@@ -31,6 +31,5 @@ class MetricCache:
 
     def dump(self) -> None:
         """Dump metric cache to pickle with lzma compression."""
-        # TODO: check if file_path must really be pickled
         pickle_object = pickle.dumps(self, protocol=pickle.HIGHEST_PROTOCOL)
         save_buffer(self.file_path, lzma.compress(pickle_object, preset=0))

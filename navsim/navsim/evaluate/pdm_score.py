@@ -116,7 +116,6 @@ def pdm_score(
         metric_cache.drivable_area_map,
     )
 
-    # TODO: Refactor & add / modify existing metrics.
     pred_idx = 1
 
     no_at_fault_collisions = scorer._multi_metrics[MultiMetricIndex.NO_COLLISION, pred_idx]

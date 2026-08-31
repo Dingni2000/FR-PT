@@ -94,7 +94,7 @@ class ResNetTrajectoryModel(nn.Module):
         # FRPT strips the "recons_" prefix to find the matching forward key.
         # ResNet stage features are returned as "resnet.z*", so keep that
         # namespace here instead of the MLP-style "recons_z*" names.
-        self.recons_map = {#需要重建特征对应的编号
+        self.recons_map = {
             "recons_resnet.z4": 1,
             "recons_resnet.z3": 1,
             # "recons_resnet.z2": 1,
@@ -138,7 +138,7 @@ class ResNetTrajectoryModel(nn.Module):
         if self._config.normalize_image:
             camera_feature = (camera_feature - self.image_mean) / self.image_std
 
-        image_feature_map, backbone_features = self.image_backbone(#layer输出的特征，并且返回设定的每层feature
+        image_feature_map, backbone_features = self.image_backbone(
             camera_feature,
             capture_mode=self._config.backbone_feature_capture,
             retain_gradients=self._config.retain_backbone_feature_gradients,
@@ -159,7 +159,7 @@ class ResNetTrajectoryModel(nn.Module):
         gamma = self.gamma_head(status_context)
         beta = self.beta_head(status_context)
 
-        scale = 1.0 + self._config.modulation_scale * torch.tanh(gamma)#进行特征的调制和融合
+        scale = 1.0 + self._config.modulation_scale * torch.tanh(gamma)
         fusion_z = scale * image_embedding + beta
 
         planning_z1 = self.planning_layer1(fusion_z)
@@ -171,7 +171,7 @@ class ResNetTrajectoryModel(nn.Module):
             3,
         )
 
-        predictions: Dict[str, torch.Tensor] = {"trajectory": trajectory} # 预测轨迹, 必需的key
+        predictions: Dict[str, torch.Tensor] = {"trajectory": trajectory}
 
         if self._config.return_intermediate_features:
             predictions.update(

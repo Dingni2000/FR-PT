@@ -110,8 +110,6 @@ def route_roadblock_correction(
     :param search_depth_forward:  depth of backward BFS search, defaults to 30
     :return: list of roadblock id's of corrected route
     """
-    # TODO: Refactor code for readability
-
     starting_block, starting_block_candidates = get_current_roadblock_candidates(
         ego_pose, map_api, route_roadblock_dict
     )

@@ -35,11 +35,30 @@ imagecls/.codex
 
 # Logs and temporary run output
 *.log
+*.out
+*.err
 *.tmp
 *.temp
 output.png
 hardware_report_*.txt
 /imagecls/.frpt_runs/
+
+# NAVSIM/OpenScene data and generated experiment roots
+/dataset/
+/exp/
+/output/
+/outputs/
+/runs/
+/results/
+/logs/
+**/training_cache/
+**/training_cache_*/
+**/metric_cache/
+**/metric_cache_*/
+**/lightning_logs/
+**/.hydra/
+**/hydra/
+**/eval_*/
 
 # Intermediate copies and backup files/directories
 *.bak
@@ -69,6 +88,11 @@ backups/
 /imagecls/recons_data_new/
 *.h5
 *.hdf5
+*.npy
+*.npz
+*.pkl
+*.pickle
+post_train_metrics.csv
 
 # Local datasets and unrelated/local working trees
 /data/
@@ -77,6 +101,10 @@ backups/
 /b2d_proj/
 /trash/
 /oldcode/
+
+# Large dataset download archives
+*.tgz
+*.zip
 
 # Local Codex/agent state
 /.codex/

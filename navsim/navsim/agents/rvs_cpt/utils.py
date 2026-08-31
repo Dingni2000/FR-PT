@@ -238,17 +238,3 @@ def mdp_tikhonov_fft_solve(
         "sigma_min": sigma_min.reshape(stat_shape).detach(),
         "condition_number": (sigma_max / sigma_min.clamp_min(tiny)).reshape(stat_shape).detach(),
     }
-
-
-if __name__ == "__main__":
-    torch.manual_seed(0)
-    A = torch.eye(2)
-    b = torch.tensor([[1.0, -2.0], [1.0, -2.0]])
-    mask = check_reliability(torch.tensor([[1.0, -2.0], [0.0, 0.0]]), A, b)
-    torch.testing.assert_close(mask, torch.tensor([True, False]))
-
-    fft_A = torch.eye(2, dtype=torch.complex64).reshape(1, 2, 2).expand(6, -1, -1)
-    fft_b = torch.ones(6, 2, dtype=torch.complex64)
-    fft_x, _ = mdp_tikhonov_fft_solve(fft_A, fft_b, torch.zeros_like(fft_b))
-    assert torch.isfinite(fft_x).all()
-    print("[PASS] utils")

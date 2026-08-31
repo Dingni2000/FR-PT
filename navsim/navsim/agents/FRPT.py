@@ -247,7 +247,7 @@ def save_recons_fea_to_h5(
             p.requires_grad_(req_grad)
     if feature_stats is not None:
         _print_feature_stats(feature_stats)
-    _log(f"saved recons data to {filepath}")  # NOTE dict [str, list] {'input':[], 'gt_trajectory':[], 'recons_zx':[]}
+    _log(f"saved recons data to {filepath}")
 
 
 def frpt(model, trainloader, recons_key, alpha, epochs, device, lr=3e-5):
@@ -259,7 +259,7 @@ def frpt(model, trainloader, recons_key, alpha, epochs, device, lr=3e-5):
         freeze_from = model.get_fea_id(recons_key)
         if freeze_from is None:
             raise ValueError(f"Unknown recons_key={recons_key}; available keys={model.get_fea_name()}")
-        for _, layer in list(model._mlp.named_children())[freeze_from:]:  # NOTE ego_status_mlp_agent use '_mlp'
+        for _, layer in list(model._mlp.named_children())[freeze_from:]:
             for p in layer.parameters():
                 p.requires_grad = False
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
@@ -267,7 +267,7 @@ def frpt(model, trainloader, recons_key, alpha, epochs, device, lr=3e-5):
     reconsloss_ls = []
     loss_ls = []
     epoch_metrics = []
-    taskcrit = nn.MSELoss()  # NOTE 轨迹规划任务的loss
+    taskcrit = nn.MSELoss()
     reconscrit = nn.MSELoss()
     ema_beta = 0.9
     ema_cls = None
@@ -275,7 +275,7 @@ def frpt(model, trainloader, recons_key, alpha, epochs, device, lr=3e-5):
     forward_key = None
         
     for epoch in range(epochs):
-        model.train()  # 训练模式
+        model.train()
         epoch_forward_sum = 0.0
         epoch_forward_absmax = 0.0
         epoch_recons_sum = 0.0
@@ -298,7 +298,6 @@ def frpt(model, trainloader, recons_key, alpha, epochs, device, lr=3e-5):
                 epoch_recons_sum += recons_feature.detach().sum().item()
                 epoch_recons_absmax = max(epoch_recons_absmax, recons_feature.detach().abs().max().item())
                 epoch_feature_count += forward_feature.numel()
-            # loss = alpha * reconsloss + (1-alpha) * clsloss  # ORIGINAL
             if alpha == 0:
                 loss_weight = torch.tensor(0.0, device=device)
             else:
@@ -311,11 +310,11 @@ def frpt(model, trainloader, recons_key, alpha, epochs, device, lr=3e-5):
                         ema_recons = ema_beta * ema_recons + (1 - ema_beta) * reconsloss.detach()
                     loss_weight = alpha * ema_cls / (ema_recons + 1e-8)
                     loss_weight = loss_weight.clamp(min=0.00001, max=10.0)
-            loss = loss_weight * reconsloss + clsloss  # 0706
+            loss = loss_weight * reconsloss + clsloss
 
-            optimizer.zero_grad()  # 清空梯度
-            loss.backward()  # 反向传播
-            optimizer.step()  # 更新参数
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
         
         forward_mean = epoch_forward_sum / max(epoch_feature_count, 1)
         recons_mean = epoch_recons_sum / max(epoch_feature_count, 1)
@@ -340,7 +339,7 @@ def frpt(model, trainloader, recons_key, alpha, epochs, device, lr=3e-5):
             f"{recons_key}_mean={recons_mean:.6f}, {recons_key}_absmax={epoch_recons_absmax:.6f}"
         )
         reconsloss_ls.append(reconsloss.item())
-        taskloss_ls.append(clsloss.item())  # pred
+        taskloss_ls.append(clsloss.item())
         loss_ls.append(loss.item())
     _log(f'[RECORD] alpha={alpha}, recons_key={recons_key}, best taskloss={min(taskloss_ls)}\n')
     return {'reconsloss_ls':reconsloss_ls, 'taskloss_ls': taskloss_ls, 'loss_ls':loss_ls, 'epoch_metrics': epoch_metrics}
@@ -354,10 +353,10 @@ def normal_pt(model, trainloader, epochs, device, lr=3e-5):
     taskloss_ls = []
     loss_ls = []
     epoch_metrics = []
-    taskcrit = nn.MSELoss()  # NOTE 轨迹规划任务的loss
+    taskcrit = nn.MSELoss()
         
     for epoch in range(epochs):
-        model.train()  # 训练模式
+        model.train()
         for batch in trainloader:
             input_data = _move_features_to_device(batch["input"], device)
             label = batch["gt_trajectory"].to(device)
@@ -365,9 +364,9 @@ def normal_pt(model, trainloader, epochs, device, lr=3e-5):
             res = model(input_data)
             loss = taskcrit(res['trajectory'], label)
 
-            optimizer.zero_grad()  # 清空梯度
-            loss.backward()  # 反向传播
-            optimizer.step()  # 更新参数
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
         
         epoch_metric = {
             "epoch": epoch + 1,

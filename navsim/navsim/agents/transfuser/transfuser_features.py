@@ -276,7 +276,6 @@ class TransfuserTargetBuilder(AbstractTargetBuilder):
         for name_value, box_value in zip(annotations.names, annotations.boxes):
             agent_type = tracked_object_types[name_value]
             if agent_type in layers:
-                # box_value = (x, y, z, length, width, height, yaw) TODO: add intenum
                 x, y, heading = box_value[0], box_value[1], box_value[-1]
                 box_length, box_width, box_height = box_value[3], box_value[4], box_value[5]
                 agent_box = OrientedBox(StateSE2(x, y, heading), box_length, box_width, box_height)

@@ -39,18 +39,3 @@ def linear_reverseCom(front_fea, back_fea, _layer_params):
         return linear_reverseCom_shrink(front_fea, back_fea, _layer_params)
     else:
         return linear_reverseCom_expand(front_fea, back_fea, _layer_params)
-
-if __name__ == "__main__":
-    for name, in_dim, out_dim in (("shrink", 256, 128), ("expand", 128, 256)):
-        layer = torch.nn.Linear(in_dim, out_dim, dtype=torch.float64)
-        layer.weight.data = torch.randn_like(layer.weight.data)
-        front = torch.randn(256, in_dim, dtype=torch.float64)
-        expected = torch.randn_like(front)
-        back = layer(expected).detach()
-
-        result = linear_reverseCom(front, back, layer)
-        assert result.shape == front.shape and torch.isfinite(result).all()
-        torch.testing.assert_close(layer(result), back, atol=1e-6, rtol=1e-5)
-        print('rel backward error:', torch.linalg.norm(layer(result) - back) / torch.linalg.norm(back))
-        print('rel forward error:', torch.linalg.norm(result - expected) / torch.linalg.norm(expected))
-        print(f"[PASS] {name}------------")

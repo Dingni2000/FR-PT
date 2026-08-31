@@ -130,7 +130,6 @@ class PDMDrivableMap(PDMOccupancyMap):
     def from_simulation(cls, map_api: AbstractMap, ego_state: EgoState, map_radius: float = 50) -> PDMDrivableMap:
         """ """
 
-        # TODO: Fix SemanticMapLayer.DRIVABLE_AREA problems
         roadblock_layers = [SemanticMapLayer.ROADBLOCK, SemanticMapLayer.ROADBLOCK_CONNECTOR]
 
         drivable_map_layers = [

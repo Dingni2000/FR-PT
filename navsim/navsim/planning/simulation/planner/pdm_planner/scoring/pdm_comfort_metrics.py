@@ -6,8 +6,6 @@ from scipy.signal import savgol_filter
 
 from navsim.planning.simulation.planner.pdm_planner.utils.pdm_enums import StateIndex
 
-# TODO: Refactor & add to config
-
 # (1) ego_jerk_metric,
 max_abs_mag_jerk = 8.37  # [m/s^3]
 

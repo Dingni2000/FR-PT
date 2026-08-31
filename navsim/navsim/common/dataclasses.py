@@ -298,10 +298,10 @@ class Scene:
         start_frame_idx = self.scene_metadata.num_history_frames - 1
 
         global_ego_poses = []
-        for frame_idx in range(start_frame_idx, start_frame_idx + num_trajectory_frames + 1):#需要当前帧+未来指定帧
+        for frame_idx in range(start_frame_idx, start_frame_idx + num_trajectory_frames + 1):
             global_ego_poses.append(self.frames[frame_idx].ego_status.ego_pose)
 
-        local_ego_poses = convert_absolute_to_relative_se2_array(#转化成自车视角
+        local_ego_poses = convert_absolute_to_relative_se2_array(
             StateSE2(*global_ego_poses[0]), np.array(global_ego_poses[1:], dtype=np.float64)
         )
 
@@ -475,8 +475,6 @@ class SceneFilter:
     max_scenes: Optional[int] = None
     log_names: Optional[List[str]] = None
     tokens: Optional[List[str]] = None
-    # TODO: expand filter options
-
     def __post_init__(self):
 
         if self.frame_interval is None:

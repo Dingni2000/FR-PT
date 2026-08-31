@@ -479,29 +479,3 @@ def convo_reverseCom(front_fea, back_fea_star, _layer_params, method="cg", regu=
         fn = convo_reverseCom_fftpadded_shrink if front_fea.shape[1] >= back_fea_star.shape[1] else convo_reverseCom_fftpadded_expand
         return fn(front_fea, back_fea_star, _layer_params, regu=regu)
     raise ValueError("method must be one of: 'cg', 'fft_oldbound', 'exact_matrix', 'fft_pad'")
-
-
-if __name__ == "__main__":
-    torch.manual_seed(0)
-    methods = ("exact_matrix", "cg", "fft_oldbound", "fft_pad")
-    shrink = nn.Conv2d(2, 1, 1, bias=True)
-    expand = nn.Conv2d(1, 2, 1, bias=True)
-    with torch.no_grad():
-        shrink.weight.copy_(torch.tensor([1.0, 2.0]).reshape(1, 2, 1, 1))
-        shrink.bias.fill_(0.25)
-        expand.weight.copy_(torch.tensor([1.0, 2.0]).reshape(2, 1, 1, 1))
-        expand.bias.copy_(torch.tensor([0.25, -0.5]))
-
-    cases = (
-        ("shrink", shrink, torch.randn(2, 2, 4, 4)),
-        ("expand", expand, torch.randn(2, 1, 4, 4)),
-    )
-    for case, layer, expected in cases:
-        front = torch.randn_like(expected)
-        target = layer(expected).detach()
-        for method in methods:
-            result = convo_reverseCom(front, target, layer, method=method)
-            assert result.shape == front.shape and torch.isfinite(result).all()
-            assert torch.allclose(layer(result), target, atol=2e-4, rtol=2e-4), (
-                case, method, (layer(result) - target).abs().max().item())
-            print(f"[PASS] {case:6s} / {method}")
